@@ -1,0 +1,4 @@
+<cml>
+    <!-- Raises OnSave and waits for the parent's async handler before going back to "Save". -->
+    <Button onclick="Click" style="@(Saving ? Busy : Idle)">@(Saving ? "Saving..." : "Save")</Button>
+</cml>

@@ -1,0 +1,45 @@
+<cml>
+    <View style="flex-col gap-12">
+        <!-- Async listener: FetchQuote is an async method taking ComponentHandle<AsyncPanel>. -->
+        <Text style="text-sky-300">Async listeners</Text>
+        <View style="flex-row items-center gap-8">
+            <Button onclick="FetchQuote">@(LoadingQuote ? "Loading quote..." : "Fetch quote")</Button>
+            <Text style="text-sm text-slate-400">@Fetches fetched</Text>
+        </View>
+        @if (Quote != null) {
+            <Text style="text-sm text-amber-200">“@Quote”</Text>
+        }
+
+        <!-- Suspense: Profile.Read() suspends while loading; the fallback shows meanwhile. -->
+        <Text style="text-sky-300">Suspense</Text>
+        <Suspense style="gap-4 p-8 rounded-6 bg-slate-800">
+            <Fallback>
+                <Text style="text-slate-400">Loading profile...</Text>
+            </Fallback>
+            <Text style="text-lg">@Profile.Read().Name</Text>
+            <Text style="text-sm text-slate-400">@Profile.Read().Role · loaded @Profile.Read().Loads time@(Profile.Read().Loads == 1 ? "" : "s")@(Profile.IsLoading ? " · refreshing..." : "")</Text>
+        </Suspense>
+        <View style="flex-row gap-6">
+            <Button onclick="Reload" tooltip="Load again: the fallback shows until it's back">Reload</Button>
+            <Button onclick="Refresh" tooltip="Load again, keeping the old profile on screen meanwhile">Refresh</Button>
+        </View>
+
+        <!-- A resource that fails: <Failed> shows it, with `error` in scope. -->
+        <Suspense fallback="Connecting..." style="p-8 rounded-6 bg-slate-800">
+            <Failed>
+                <View style="flex-row items-center gap-8">
+                    <Text style="text-rose-300 grow">Failed: @error.Message</Text>
+                    <Button onclick="Retry">Retry</Button>
+                </View>
+            </Failed>
+            <Text>Server says: @Broken.Read()</Text>
+        </Suspense>
+
+        <!-- Async callback: the child awaits the parent's async handler (InvokeAsync). -->
+        <Text style="text-sky-300">Async callbacks</Text>
+        <View style="flex-row items-center gap-8">
+            <SaveButton onsave="Save"/>
+            <Text style="text-sm text-slate-400">Saved @Saves time@(Saves == 1 ? "" : "s")</Text>
+        </View>
+    </View>
+</cml>

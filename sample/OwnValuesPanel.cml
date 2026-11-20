@@ -1,0 +1,34 @@
+<cml>
+    <View style="flex-col gap-10">
+        <!-- No state, no handlers: each widget keeps its own value. -->
+        <Text style="text-slate-400 text-sm">These widgets have no state or handlers: they keep their own values.</Text>
+        <Checkbox>Remember me</Checkbox>
+        <Switch default="true">Notifications</Switch>
+        <ToggleButton>Bold</ToggleButton>
+        <View style="flex-row gap-12">
+            <RadioButton group="size" value="0">S</RadioButton>
+            <RadioButton group="size" value="1" default="true">M</RadioButton>
+            <RadioButton group="size" value="2">L</RadioButton>
+        </View>
+        <TextInput placeholder="Own text" style="w-full"/>
+        <Slider default="30" style="w-full"/>
+
+        <!-- BindableValue fields: edited in place, shared between widgets, readable by code. -->
+        <Text style="text-slate-400 text-sm">BindableValue: one value, several widgets.</Text>
+        <ComboBox value="Fruits[Fruit.Value]" style="w-full">
+            @for (int i = 0; i < Fruits.Length; i++) {
+                <Option bind:group="Fruit" value="i">@Fruits[i]</Option>
+            }
+        </ComboBox>
+        <View style="flex-row items-end gap-16">
+            <Slider bind:value="Level" orientation="vertical"/>
+            <ProgressBar value="Level.Value" orientation="vertical"/>
+            <View style="flex-col gap-8 grow min-w-0">
+                <Text>Level: @((int)Level.Value)</Text>
+                <ProgressBar value="Level.Value" style="w-full"/>
+                <Checkbox checked="Muted">Muted</Checkbox>
+                <Switch bind:on="Muted">Same value, another widget</Switch>
+            </View>
+        </View>
+    </View>
+</cml>

@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <RootNamespace>Cosmiria</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Riateu/Riateu/Riateu.csproj" />
+  </ItemGroup>
+
+  <!-- Text shaping (ligatures, kerning, marks, complex scripts). HarfBuzzSharp ships the Windows
+       and macOS natives; Linux needs its own package. -->
+  <ItemGroup>
+    <PackageReference Include="HarfBuzzSharp" Version="14.4.0.200" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="14.4.0.200" />
+  </ItemGroup>
+
+  <!-- The CML source generator is its own project (netstandard2.0 analyzer). -->
+  <ItemGroup>
+    <Compile Remove="Generator/**" />
+    <None Remove="Generator/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Shaders/Compiled/Vulkan/*.spv">
+      <LogicalName>Cosmiria.Shaders.%(Filename).spv</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Shaders/Compiled/DX12/*.dxil">
+      <LogicalName>Cosmiria.Shaders.%(Filename).dxil</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>

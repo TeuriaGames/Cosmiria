@@ -1,0 +1,3 @@
+[submodule "Riateu"]
+	path = Riateu
+	url = git@github.com:TeuriaGames/Riateu.git

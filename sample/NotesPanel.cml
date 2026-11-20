@@ -1,0 +1,39 @@
+<cml>
+    <View style="flex-col gap-10 grow min-h-0">
+        <!-- Multi-line input: Enter adds a line, Ctrl+Enter submits. -->
+        <TextArea value="Notes" placeholder="Write something..." rows="5" onsubmit="Save" style="w-full"/>
+        <Text style="text-slate-400 text-sm">Saved: @SavedLines line@(SavedLines == 1 ? "" : "s")</Text>
+
+        <!-- CSS-like transitions: properties animate when they change (hover, or state). -->
+        <View style="flex-row items-center gap-10">
+            <Button onclick="Toggle" style="transition duration-200 hover:scale-110 hover:bg-blue-600">Toggle box</Button>
+            <View style="transition-all duration-500 ease-in-out rounded-6 @(Expanded ? Big : Small)"/>
+        </View>
+        <Text style="transition-opacity duration-700 @(Expanded ? Shown : Faded)">Fades in when expanded</Text>
+
+        <!-- Gradients: linear with a middle stop, radial, an angle, and fading to transparent. -->
+        <View style="flex-row items-center gap-8">
+            <View style="h-36 grow rounded-6 bg-gradient-to-r from-sky-500 via-violet-500 to-pink-500"/>
+            <View style="size-36 rounded-full bg-radial from-amber-300 to-rose-600"/>
+            <View style="size-36 rounded-6 bg-linear-135 from-emerald-400 to-teal-800"/>
+            <View style="size-36 rounded-6 bg-gradient-to-b from-blue-500"/>
+        </View>
+        <Button style="bg-linear-90 from-indigo-600 to-fuchsia-600 hover:from-indigo-400 border-0 shadow-lg shadow-fuchsia-500/50 hover:shadow-xl">Gradient button</Button>
+
+        <!-- Arbitrary values: literal ([-6], [37.5%]) or C# ([@Tilt]) — the box follows the slider. -->
+        <View style="flex-row items-center gap-10">
+            <Slider bind:value="Tilt" min="-45" max="45" style="w-120"/>
+            <View style="h-24 rounded-4 bg-sky-500 translate-y-[-2] w-[@(60 + Tilt)] rotate-[@Tilt] translate-x-[@(Tilt / 3)]"/>
+        </View>
+        <Text style="text-sm text-slate-400">Tilt @((int)Tilt)°: width @((int)(60 + Tilt))px</Text>
+
+        <!-- Reactivity: game code sets Game.Score (a BindableValue); no Notify() anywhere. -->
+        <Text>Score: @Game.Score.Value · level @Game.Level.Value</Text>
+
+        <!-- A resizable split: drag the divider. -->
+        <Split bind:size="LeftWidth" min="60" max="400" second-min="60" style="h-80 rounded-6 overflow-hidden">
+            <Pane style="bg-slate-800 p-8"><Text>Left: @((int)LeftWidth)px</Text></Pane>
+            <Pane style="bg-slate-700 p-8"><Text>Right</Text></Pane>
+        </Split>
+    </View>
+</cml>

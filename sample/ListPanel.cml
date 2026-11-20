@@ -1,0 +1,28 @@
+<cml>
+    <View style="flex-col gap-8 grow">
+        <View style="flex-row flex-wrap items-center gap-8">
+            <Button onclick="AddAndShow">Add item</Button>
+            <Text style="text-#8F9BB3">@Items.Count items</Text>
+            @if (HoveredId >= 0) {
+                <Text style="text-#8F9BB3">· hovering #@HoveredId</Text>
+            }
+            @if (SelectedId >= 0) {
+                <Text style="text-#88C0D0">· selected #@SelectedId</Text>
+            }
+        </View>
+
+        <!-- Each row binds its own item id: the argument is captured at render time. -->
+        <View style="flex-col gap-4 grow overflow-scroll p-6 bg-#1E222A rounded-6">
+            @foreach (var item in Items) {
+                <View id="item.Id" onclick="Select(item.Id)" onhover="Hover(item.Id, $e)"
+                      style="flex-row items-center gap-8 px-10 py-6 bg-#2B303B rounded-4 hover:bg-#353B48 @(item.Id == SelectedId ? Selected : Normal)">
+                    <Text style="grow">Item #@item.Id</Text>
+                    <Text>@(item.Value)%</Text>
+                    <Button style="px-8 py-2 bg-#5E3A3A hover:bg-#BF616A" onclick="Remove(item.Id)">x</Button>
+                </View>
+            }
+            <!-- The end of the list: Add item scrolls it into view. -->
+            <View ref="End"/>
+        </View>
+    </View>
+</cml>

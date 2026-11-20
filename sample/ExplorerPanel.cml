@@ -1,0 +1,86 @@
+<cml>
+    <View style="flex-col gap-8 grow min-h-0">
+        <!-- Runs after the build where the selection changed (and once on mount). -->
+        <Effect deps="Selected.Value" run="SelectionChanged"/>
+        <View style="flex-row items-center gap-8">
+            <Text style="text-sm text-slate-400 grow">Right-click an item for its menu.</Text>
+            <Text style="text-sm text-slate-400">@Textures.Count textures</Text>
+            <Button tooltip="Adds a texture to Assets/Textures" onclick="AddTexture">Add</Button>
+        </View>
+        <View style="flex-col grow min-h-0 overflow-scroll bg-slate-900 rounded-6 p-4">
+            <!-- Each item has its own right-click menu (a right click also selects it); the empty
+                 space below the items has the tree's menu. -->
+            <Tree selected="Selected">
+                <TreeItem label="Assets" default="true">
+                    <ContextMenu>
+                        <MenuItem onclick='CopyName("Assets")'>Copy name</MenuItem>
+                    </ContextMenu>
+                    <TreeItem label="Textures" default="true">
+                        <ContextMenu>
+                            <MenuItem onclick="AddTexture">New texture</MenuItem>
+                            <MenuSeparator/>
+                            <Menu title="Sort">
+                                <MenuItem onclick="SortAscending">A to Z</MenuItem>
+                                <MenuItem onclick="SortDescending">Z to A</MenuItem>
+                            </Menu>
+                        </ContextMenu>
+                        @foreach (var name in Textures) {
+                            <TreeItem label="@name" tooltip="@name" key="name">
+                                <ContextMenu key="name">
+                                    <MenuItem onclick="StartRename(name)">Rename</MenuItem>
+                                    <MenuItem onclick="Duplicate(name)">Duplicate</MenuItem>
+                                    <MenuItem onclick="CopyName(name)">Copy name</MenuItem>
+                                    <MenuSeparator/>
+                                    <MenuItem onclick="Delete(name)">Delete @name</MenuItem>
+                                </ContextMenu>
+                            </TreeItem>
+                        }
+                    </TreeItem>
+                    <TreeItem label="Sounds">
+                        <ContextMenu>
+                            <MenuItem onclick="PlayAll">Play all</MenuItem>
+                            <MenuSeparator/>
+                            <MenuItem onclick='CopyName("Sounds")'>Copy name</MenuItem>
+                        </ContextMenu>
+                        @foreach (var sound in Sounds) {
+                            <TreeItem label="@sound" key="sound">
+                                <ContextMenu key="sound">
+                                    <MenuItem onclick="Play(sound)">Play</MenuItem>
+                                    <MenuItem onclick="CopyName(sound)">Copy name</MenuItem>
+                                </ContextMenu>
+                            </TreeItem>
+                        }
+                    </TreeItem>
+                </TreeItem>
+                <TreeItem label="Scenes">
+                    <ContextMenu>
+                        <MenuItem onclick='CopyName("Scenes")'>Copy name</MenuItem>
+                    </ContextMenu>
+                    <TreeItem label="Main.scene">
+                        <ContextMenu>
+                            <MenuItem onclick='Open("Main.scene")'>Open</MenuItem>
+                            <MenuItem onclick='CopyName("Main.scene")'>Copy name</MenuItem>
+                        </ContextMenu>
+                    </TreeItem>
+                </TreeItem>
+            </Tree>
+            <ContextMenu>
+                <MenuItem shortcut="Ins" onclick="AddTexture">New texture</MenuItem>
+                <MenuItem onclick="ClearSelection">Clear selection</MenuItem>
+            </ContextMenu>
+        </View>
+        @if (Renaming != null) {
+            <!-- ref: StartRename shows this box and focuses it (after the build that adds it). -->
+            <View style="flex-row items-center gap-6">
+                <Text style="text-sm text-slate-400">Rename</Text>
+                <TextInput ref="RenameBox" value="RenameText" onsubmit="FinishRename" style="grow"/>
+                <Button onclick="CancelRename">Cancel</Button>
+            </View>
+        }
+        <Text>Selected: @(Selected.Value ?? "nothing")</Text>
+        @if (Status != null) {
+            <Text style="text-sm text-sky-300">@Status</Text>
+        }
+        <Text style="text-sm text-slate-400">Effect ran @Changes time@(Changes == 1 ? "" : "s")</Text>
+    </View>
+</cml>

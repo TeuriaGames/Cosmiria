@@ -1,0 +1,20 @@
+<cml>
+    <View style="flex-col gap-12">
+        <Text style="text-sky-300">Custom events</Text>
+        <Text style="text-sm text-slate-400">MoodPicker declares Callback fields; onpick / onreset fill them here.</Text>
+
+        <!-- $e is the callback's argument (the picked index). -->
+        <MoodPicker state="MoodPicker.Create()" onpick="MoodPicked($e)" onreset="MoodReset"/>
+        <Text>Mood: @(Mood < 0 ? "none" : MoodPicker.Names[Mood]) · @Changes change@(Changes == 1 ? "" : "s")</Text>
+
+        <!-- Other arguments are captured per picker, like event handler arguments. -->
+        <Text style="text-sm text-slate-400">Per-row callbacks (the row index is captured)</Text>
+        @for (int i = 0; i < Team.Length; i++) {
+            <View style="flex-row items-center gap-8">
+                <Text style="w-60">@TeamNames[i]</Text>
+                <MoodPicker key="i + 1" state="MoodPicker.Create()" onpick="TeamMood(i, $e)" onreset="TeamMood(i, -1)"/>
+            </View>
+        }
+        <Text>Team: @Name(Team[0]), @Name(Team[1])</Text>
+    </View>
+</cml>

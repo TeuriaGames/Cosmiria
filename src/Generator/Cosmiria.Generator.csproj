@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <RootNamespace>Cosmiria.Generator</RootNamespace>
+    <NoWarn>RS2008</NoWarn>
+    <DefineConstants>$(DefineConstants);COSMIRIA_GENERATOR</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Same palette as the library: one generated source of truth (src/scripts/gen_tailwind.py). -->
+  <ItemGroup>
+    <Compile Include="../Style/Tailwind.cs" Link="Tailwind.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,46 @@
+<cml>
+    <View style="flex-col gap-12">
+        <View style="flex-row items-center gap-8">
+            <Icon src="Assets/logo.svg" size="28"/>
+            <Text style="text-sky-300">Widgets</Text>
+        </View>
+
+        <Checkbox bind:checked="Agree">I agree to the terms</Checkbox>
+        <Checkbox bind:checked="Updates">Send me updates</Checkbox>
+
+        <View style="flex-col gap-6">
+            <Text style="text-slate-400">Size</Text>
+            @for (int i = 0; i < Sizes.Length; i++) {
+                <RadioButton bind:group="Size" value="i">@Sizes[i]</RadioButton>
+            }
+        </View>
+
+        <Switch bind:on="Dark">Dark mode</Switch>
+
+        <View style="flex-row gap-6">
+            <ToggleButton bind:pressed="Liked"><Icon icon="Icons.Heart" size="14"/>Like</ToggleButton>
+            <ToggleButton bind:pressed="Starred"><Icon icon="Icons.Star" size="14"/>Star</ToggleButton>
+        </View>
+
+        <!-- Two-way binding to a child component's field: Counter.Value <-> Quantity. -->
+        <View style="flex-row items-center gap-4">
+            <Counter bind:Value="Quantity"/>
+            <Button onclick="Double">x2</Button>
+        </View>
+        <Text style="text-slate-400">Quantity: @Quantity</Text>
+
+        <ComboBox value="Fruits[Fruit]" bind:open="FruitsOpen" style="w-full">
+            @for (int i = 0; i < Fruits.Length; i++) {
+                <Option bind:group="Fruit" value="i">@Fruits[i]</Option>
+            }
+        </ComboBox>
+
+        <TextInput value="Name" placeholder="Your name" onsubmit="Submit" style="w-full"/>
+        @if (Greeting != null) {
+            <View style="flex-row items-center gap-6">
+                <Icon icon="Icons.Check" size="14" style="text-emerald-400"/>
+                <Text style="text-emerald-400">Hello, @Greeting!</Text>
+            </View>
+        }
+    </View>
+</cml>

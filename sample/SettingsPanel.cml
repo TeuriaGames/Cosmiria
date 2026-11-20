@@ -1,0 +1,54 @@
+<cml>
+    <Tabs bind:selected="Page" style="w-full">
+        <Tab title="Audio">
+            <Text style="text-slate-400">Master volume: @((int)(Volume * 100))%</Text>
+            <Slider bind:value="Volume" min="0" max="1" step="0.05" style="w-full"/>
+            <Text style="text-slate-400">Music: @Music</Text>
+            <Slider bind:value="Music" style="w-full"/>
+        </Tab>
+        <Tab title="Video">
+            <Switch bind:on="VSync">VSync</Switch>
+            <Text style="text-slate-400">Brightness: @Brightness</Text>
+            <!-- Explicit form: ondrag gets the pointer event; Slider.ValueAt maps it to a value. -->
+            <Slider value="Brightness" min="-50" max="50" ondrag="SetBrightness($e)" style="w-full"/>
+        </Tab>
+        <Tab title="Media">
+            <!-- Text is rasterized at its drawn size: every step of the scale is sharp. -->
+            <View style="flex-row flex-wrap items-end gap-x-10">
+                <Text style="text-xs">xs</Text>
+                <Text style="text-sm">sm</Text>
+                <Text style="text-base">base</Text>
+                <Text style="text-lg">lg</Text>
+                <Text style="text-xl">xl</Text>
+                <Text style="text-2xl">2xl</Text>
+                <Text style="text-3xl">3xl</Text>
+                <Text style="text-4xl">4xl</Text>
+            </View>
+            <!-- A 1024x640 PNG drawn small (mipmapped), cropped by fit="cover", and SVGs at two sizes. -->
+            <View style="flex-row items-center gap-10">
+                <Image src="Assets/pattern.png" fit="cover" style="w-160 h-100 rounded-10"/>
+                <Image src="Assets/pattern.png" style="w-80"/>
+                <Image src="Assets/logo.svg" style="w-64"/>
+                <Image src="Assets/logo.svg" style="w-20"/>
+            </View>
+            <!-- Transforms: paint-only, children included; hit testing follows them. -->
+            <View style="flex-row items-center gap-x-32 py-12">
+                <Button style="rotate-12">Rotated</Button>
+                <Button style="scale-150">Scaled</Button>
+                <Button style="transition duration-300 hover:scale-150 hover:-rotate-3">Hover me</Button>
+                <Button style="translate-x-40" onclick="Nudge">Moved</Button>
+            </View>
+            <Text style="text-slate-400">Moved clicks: @MovedClicks</Text>
+        </Tab>
+        <Tab title="Game">
+            <!-- A render target the game redraws every frame; nearest sampling keeps its pixels square. -->
+            <Image ref="Game.ScreenRef" source="Game.Screen" fit="contain" sampling="nearest" onclick="PokeGame($e)" onmove="TrackGame($e)"
+                   style="w-full h-180 bg-black rounded-6"/>
+            <Text style="text-slate-400">Game pixel: @((int)GamePixel.X), @((int)GamePixel.Y)</Text>
+            <Text style="text-slate-400">Pointer: @((int)PointerPixel.X), @((int)PointerPixel.Y)</Text>
+        </Tab>
+        <Tab title="About">
+            <Text>Tabs build only the selected tab's content.</Text>
+        </Tab>
+    </Tabs>
+</cml>

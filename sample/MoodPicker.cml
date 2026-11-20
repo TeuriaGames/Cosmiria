@@ -1,0 +1,9 @@
+<cml>
+    <!-- A component with its own events: OnPick(int) and OnReset. It raises them from its listeners. -->
+    <View style="flex-row items-center gap-4">
+        @for (int i = 0; i < Names.Length; i++) {
+            <Button onclick="Pick(i)" style="px-10 py-4 @(i == Selected ? On : Off)">@Names[i]</Button>
+        }
+        <Button onclick="Reset" style="px-10 py-4 bg-transparent text-slate-400">Undecided</Button>
+    </View>
+</cml>

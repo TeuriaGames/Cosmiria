@@ -1,0 +1,16 @@
+<cml>
+    <using namespace="Riateu"/>
+
+    <View style="flex flex-col gap-6">
+        <Text>Clicked @Num times</Text>
+        <Button onclick="Increment" style="shadow-black shadow-md">Click me</Button>
+
+        @if (Num >= 3) {
+            <Button style="justify-center items-center bg-#5E81AC hover:bg-#81A1C1">
+                <Text style="text-center">Hello World</Text>
+            </Button>
+        } else {
+            <Text style="text-#8F9BB3">Click @(3 - Num) more time@(Num == 2 ? "" : "s") to unlock</Text>
+        }
+    </View>
+</cml>

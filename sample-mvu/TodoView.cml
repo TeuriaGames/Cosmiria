@@ -1,0 +1,84 @@
+<cml>
+    <!-- View: a function of the model. It never changes the model; it only dispatches messages. -->
+    <View style="flex-row size-full bg-#1F232B gap-16 p-16">
+
+        <!-- The app -->
+        <View style="flex-col grow min-w-0 gap-12 bg-#2B303B rounded-10 p-16">
+            <View style="flex-row items-center gap-10">
+                <Text style="text-3xl text-sky-300 grow">Todos</Text>
+                @if (M.Loading) {
+                    <Text style="text-sm text-slate-400">Loading examples...</Text>
+                } else {
+                    <Button onclick="Dispatch(new Msg.LoadExamples())" tooltip="Async command: arrives 0.8 s later">Load examples</Button>
+                }
+            </View>
+
+            <View style="flex-row items-center gap-8">
+                <Button onclick="Dispatch(new Msg.ToggleAll())" tooltip="Toggle all"
+                        style="px-8 @(M.AllDone ? Highlight : Normal)"><Icon icon="Icons.Check" size="16"/></Button>
+                <TextInput ref="DraftBox" value="Draft" placeholder="What needs to be done?" onsubmit="Submit" style="grow"/>
+                <Button onclick="Submit"><Icon icon="Icons.Plus" size="14"/>Add</Button>
+            </View>
+
+            <View style="flex-col gap-4 grow min-h-0 overflow-scroll bg-#1E222A rounded-6 p-6">
+                @if (M.Todos.Length == 0) {
+                    <Text style="text-slate-500 p-8">Nothing to do. Add something above.</Text>
+                }
+                @foreach (var todo in M.Todos) {
+                    @if (M.Shows(todo)) {
+                        <View id="todo.Id" style="flex-row items-center gap-8 px-10 py-6 rounded-4 bg-#2B303B hover:bg-#353B48">
+                            <Checkbox checked="todo.Done" onclick="Dispatch(new Msg.Toggle(todo.Id))"
+                                      style="grow @(todo.Done ? DoneText : Normal)">@todo.Title</Checkbox>
+                            <Button onclick="Dispatch(new Msg.Remove(todo.Id))" tooltip="Delete"
+                                    style="px-6 py-4 bg-transparent hover:bg-#BF616A"><Icon icon="Icons.Trash" size="14"/></Button>
+                        </View>
+                    }
+                }
+            </View>
+
+            @if (M.Toast != null) {
+                <View style="flex-row items-center gap-10 px-12 py-8 rounded-6 bg-#3B4252">
+                    <Text style="grow">Deleted "@M.Toast.Removed.Title"</Text>
+                    <Button onclick="Dispatch(new Msg.Undo())">Undo</Button>
+                </View>
+            }
+
+            <View style="flex-row flex-wrap items-center gap-6">
+                <Text style="text-slate-400 grow">@M.ActiveCount left · @M.DoneCount done</Text>
+                <Button onclick="Dispatch(new Msg.Show(Filter.All))" style="@(M.Filter == Filter.All ? Highlight : Normal)">All</Button>
+                <Button onclick="Dispatch(new Msg.Show(Filter.Active))" style="@(M.Filter == Filter.Active ? Highlight : Normal)">Active</Button>
+                <Button onclick="Dispatch(new Msg.Show(Filter.Done))" style="@(M.Filter == Filter.Done ? Highlight : Normal)">Done</Button>
+                @if (M.DoneCount > 0) {
+                    <Button onclick="Dispatch(new Msg.ClearDone())" style="bg-#5E3A3A hover:bg-#BF616A">Clear done</Button>
+                }
+            </View>
+        </View>
+
+        <!-- Time travel: every message and the model it produced. Click one to go back to it. -->
+        <View style="flex-col w-300 gap-8 bg-#2B303B rounded-10 p-12">
+            <View style="flex-row items-center gap-6">
+                <Text style="text-lg grow">History</Text>
+                <Button onclick="Step(-1)" style="px-6"><Icon icon="Icons.ChevronLeft" size="14"/></Button>
+                <Button onclick="Step(1)" style="px-6"><Icon icon="Icons.ChevronRight" size="14"/></Button>
+                <Button onclick="Live" style="@(Store.IsLive ? Normal : Highlight)">Live</Button>
+            </View>
+
+            @if (Store.IsLive) {
+                <Text style="text-sm text-slate-400">Showing the latest state</Text>
+            } else {
+                <Text style="text-sm text-amber-300">Viewing step @Store.Cursor of @(Store.HistoryCount - 1) · timers paused</Text>
+            }
+
+            <View style="flex-col gap-2 grow min-h-0 overflow-scroll bg-#1E222A rounded-6 p-4">
+                @for (int i = Store.HistoryCount - 1; i >= 0; i--) {
+                    <View id="i" onclick="TravelTo(i)"
+                          style="flex-row gap-8 px-8 py-4 rounded-4 hover:bg-#353B48 @(i == Store.Cursor ? Current : (i > Store.Cursor ? Future : Normal))">
+                        <Text style="text-sm text-slate-500 w-28">@i</Text>
+                        <Text style="text-sm">@Store.History(i).Label</Text>
+                    </View>
+                }
+            </View>
+
+        </View>
+    </View>
+</cml>
