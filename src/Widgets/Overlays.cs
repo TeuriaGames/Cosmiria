@@ -99,6 +99,16 @@ public sealed partial class UIStack
 
     /// <summary>
     /// A context menu for <paramref name="target"/>: a right click opens it at the pointer.
+    /// Add items only when <see cref="Menu.IsOpen"/>, and attach
+    /// <see cref="Menu.Popup"/> anywhere (it's placed at the pointer, over everything).
+    /// </summary>
+    public Menu ContextMenu(Node target)
+    {
+        return ContextMenu(target, Own(new Vector2(float.NaN)));
+    }
+
+    /// <summary>
+    /// A context menu for <paramref name="target"/>: a right click opens it at the pointer.
     /// <paramref name="position"/> holds where it's open (NaN: closed); pass <c>ui.Own(new Vector2(float.NaN))</c>
     /// to let it manage itself. Add items only when <see cref="Menu.IsOpen"/>, and attach
     /// <see cref="Menu.Popup"/> anywhere (it's placed at the pointer, over everything).
