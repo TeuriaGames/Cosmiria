@@ -841,6 +841,7 @@ public sealed class UIContext : IDisposable
         if (!content.IsNone) stack.Attach(rootNode, content.Index);
 
         KeepAlive();
+        CollectCleanups();
         for (int i = 0; i < tables.Length; i++) tables[i]?.Sweep(Build);
         for (int i = 0; i < bindings.Length; i++) bindings[i]?.Sweep(Build);
         SweepOwned();
@@ -1028,6 +1029,8 @@ public sealed class UIContext : IDisposable
 
     public void Dispose()
     {
+        foreach (EffectCleanup entry in effectCleanups.Values) entry.Listener?.Invoke(0, this, default);
+        effectCleanups.Clear();
         Keyboard.TextInput -= onChar;
         Reactive.Unregister(this);
         if (focus.FocusedId != 0) SDL.SDL_StopTextInput(window.Handle);
@@ -1416,6 +1419,62 @@ public sealed class UIContext : IDisposable
 
     /// <summary>Queue an effect to run after this build (see <see cref="UIStack.Effect{TDeps}"/>).</summary>
     internal void QueueEffect(EventHandle run) => pendingEffects.Add(run);
+
+    /// <summary>The cleanup of each effect that registered one, by the effect's own-value box.</summary>
+    private sealed class EffectCleanup
+    {
+        public int Component, Build;
+        public DetachedListener Listener;
+    }
+
+    private readonly Dictionary<object, EffectCleanup> effectCleanups = new();
+    private readonly List<object> deadCleanups = new();
+
+    /// <summary>The effect at <paramref name="key"/> was called in this build; its cleanup is still wanted.</summary>
+    internal void TouchCleanup(object key)
+    {
+        if (effectCleanups.TryGetValue(key, out EffectCleanup entry)) entry.Build = Build;
+    }
+
+    /// <summary>Queue the cleanup of the effect at <paramref name="key"/> (it runs again) and forget it; returns it for undo.</summary>
+    internal DetachedListener TakeCleanup(object key)
+    {
+        if (!effectCleanups.TryGetValue(key, out EffectCleanup entry) || entry.Listener == null) return null;
+        DetachedListener listener = entry.Listener;
+        entry.Listener = null;
+        pendingEffects.Add(new EventHandle(listener, 0));
+        return listener;
+    }
+
+    /// <summary>Set the cleanup the effect at <paramref name="key"/> runs before its next run or when it goes away.</summary>
+    internal void SetCleanup(object key, int component, DetachedListener listener)
+    {
+        if (!effectCleanups.TryGetValue(key, out EffectCleanup entry))
+            effectCleanups[key] = entry = new EffectCleanup { Component = component };
+        entry.Listener = listener;
+        entry.Build = Build;
+    }
+
+    internal DetachedListener Detach(EventHandle handle) =>
+        handle.Binder?.Detach(handle.Index, this) ?? throw new ArgumentException("An effect cleanup must be a listener from ev.Listener.");
+
+    /// <summary>
+    /// Effects that weren't called in this build (their condition went false, or their component
+    /// unmounts) run their cleanup after it. Unmounting components lend it a copy of their state.
+    /// </summary>
+    private void CollectCleanups()
+    {
+        foreach (var (key, entry) in effectCleanups)
+        {
+            if (entry.Build == Build || frozen.Contains(entry.Component)) continue;
+            deadCleanups.Add(key);
+            if (entry.Listener == null) continue;
+            entry.Listener.Prepare(this, Build);
+            pendingEffects.Add(new EventHandle(entry.Listener, 0));
+        }
+        foreach (object key in deadCleanups) effectCleanups.Remove(key);
+        deadCleanups.Clear();
+    }
 
     /// <summary>Sizes of the lists a build appends to (a Suspense boundary cuts them back).</summary>
     internal (int effects, int shortcuts, int deferred, int refs) BuildListCounts() =>

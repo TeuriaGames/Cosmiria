@@ -146,31 +146,68 @@ public sealed partial class UIStack
     /// which this call first happens, and again after any build where <paramref name="deps"/>
     /// changed (compared with Equals; use a tuple for several values). Like React's useEffect:
     /// <code>
-    /// ui.Effect(ev.Listener(static (ref Editor e) => e.LoadLevel()), LevelIndex);
+    /// ui.Effect(ev.Listener(static (ref Editor e) => e.Watch()), LevelIndex,
+    ///     cleanup: ev.Listener(static (ref Editor e) => e.Unwatch()));
     /// </code>
-    /// Effects run like listeners (state changes rebuild). There's no cleanup callback.
+    /// <paramref name="cleanup"/> (optional, a listener) undoes a run: it runs before the next run,
+    /// and after the build where this call stops happening or its component unmounts (then on
+    /// a copy of the component's last state). Effects run like listeners (state changes rebuild).
     /// </summary>
+    public void Effect<TDeps>(EventHandle run, TDeps deps, EventHandle cleanup,
+        [CallerFilePath] string file = "", [CallerLineNumber] int line = 0)
+    {
+        EffectCall call = EffectAt(HashCode.Combine(file, line), deps);
+        call.Cleanup(cleanup);
+        call.Run(run);
+    }
+
+    /// <inheritdoc cref="Effect{TDeps}(EventHandle, TDeps, EventHandle, string, int)"/>
     public void Effect<TDeps>(EventHandle run, TDeps deps, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) =>
         EffectAt(HashCode.Combine(file, line), deps).Run(run);
+
+    /// <summary>An effect that runs once, after the build in which it first appears (on mount); <paramref name="cleanup"/> runs when it goes away.</summary>
+    public void Effect(EventHandle run, EventHandle cleanup, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) =>
+        Effect(run, 0, cleanup, file, line);
 
     /// <summary>An effect that runs once, after the build in which it first appears (on mount).</summary>
     public void Effect(EventHandle run, [CallerFilePath] string file = "", [CallerLineNumber] int line = 0) =>
         EffectAt(HashCode.Combine(file, line), 0).Run(run);
 
-    /// <summary>Effect for <paramref name="site"/> (CML's &lt;Effect&gt;): call <see cref="EffectCall.Run"/> with the listener.</summary>
+    /// <summary>Effect for <paramref name="site"/> (CML's &lt;Effect&gt;): call <see cref="EffectCall.Cleanup"/>, then <see cref="EffectCall.Run"/>.</summary>
     public EffectCall EffectAt<TDeps>(int site, TDeps deps)
     {
         BindableValue<(bool ran, TDeps deps)> state = Own(site, (false, default(TDeps)));
         bool due = !state.Value.ran || !EqualityComparer<TDeps>.Default.Equals(state.Value.deps, deps);
+        context.TouchCleanup(state);
         if (due)
         {
             var before = state.Value;
             state.Value = (true, deps);
+            DetachedListener previous = context.TakeCleanup(state);
             // Inside a Suspense boundary that gives up, the effect hasn't happened: it runs when the content shows.
-            if (SuspenseDepth > 0) RecordUndo(() => state.Value = before);
+            if (SuspenseDepth > 0)
+            {
+                int component = CurrentComponent;
+                RecordUndo(() =>
+                {
+                    state.Value = before;
+                    if (previous != null) context.SetCleanup(state, component, previous);
+                });
+            }
         }
-        return new EffectCall(context, due);
+        return new EffectCall(this, state, due);
     }
+
+    private int CurrentComponent => depth > 0 ? frames[depth - 1].StableId : UIContext.RootSeed;
+
+    /// <summary>Register <paramref name="cleanup"/> for the effect whose own value is <paramref name="key"/>.</summary>
+    internal void SetEffectCleanup(object key, EventHandle cleanup)
+    {
+        context.SetCleanup(key, CurrentComponent, context.Detach(cleanup));
+        if (SuspenseDepth > 0) RecordUndo(() => context.SetCleanup(key, 0, null));
+    }
+
+    internal void QueueEffect(EventHandle run) => context.QueueEffect(run);
 
     /// <summary>
     /// One box shared by every call with the same <paramref name="name"/> in this component, e.g.
@@ -220,13 +257,20 @@ public sealed partial class UIStack
 /// <summary>Returned by <see cref="UIStack.EffectAt{TDeps}"/>.</summary>
 public readonly struct EffectCall
 {
-    private readonly UIContext context;
+    private readonly UIStack ui;
+    private readonly object key;
     private readonly bool due;
-    internal EffectCall(UIContext context, bool due) { this.context = context; this.due = due; }
+    internal EffectCall(UIStack ui, object key, bool due) { this.ui = ui; this.key = key; this.due = due; }
+
+    /// <summary>Set the listener that undoes this run (call before <see cref="Run"/>).</summary>
+    public void Cleanup(EventHandle cleanup)
+    {
+        if (due && cleanup.IsValid) ui.SetEffectCleanup(key, cleanup);
+    }
 
     /// <summary>Queue <paramref name="run"/> if the effect is due.</summary>
     public void Run(EventHandle run)
     {
-        if (due && run.IsValid) context.QueueEffect(run);
+        if (due && run.IsValid) ui.QueueEffect(run);
     }
 }

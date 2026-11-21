@@ -292,6 +292,22 @@ public sealed partial class UIStack
     }
 
     /// <summary>
+    /// A container whose children are blurred by <paramref name="radius"/> (the Gaussian's standard
+    /// deviation). With <paramref name="backdrop"/>, what is drawn behind it is blurred instead,
+    /// inside its rounded box, and its children stay sharp (frosted glass: add a translucent Bg).
+    /// </summary>
+    public Node Blur(float radius, bool backdrop = false, in Style style = default) =>
+        View(backdrop ? style.BackdropBlur(radius) : style.Blur(radius));
+
+    /// <summary>
+    /// A grid of <paramref name="columns"/> equal columns: children fill it row by row, and rows
+    /// size to their tallest item. Spans and other track sizes go on the styles
+    /// (<see cref="Style.ColSpanOf"/>, <see cref="Style.GridCols(GridTrack[])"/>).
+    /// </summary>
+    public Node Grid(int columns, float gap = 0, in Style style = default) =>
+        View(default(Style).GridCols(columns).Gap(gap).MergedWith(style));
+
+    /// <summary>
     /// Two panes with a draggable divider: <see cref="Cosmiria.Split.First"/> is <paramref name="size"/>
     /// wide (or tall when <paramref name="vertical"/>), <see cref="Cosmiria.Split.Second"/> takes the rest.
     /// You own the size; resize it from the handle's drag:

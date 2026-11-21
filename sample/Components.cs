@@ -483,6 +483,11 @@ public struct App : IComponent
                 ui.View(ui.Style().Grow()),
                 ui.Text($"Flex wrap (selected: {tagNames[SelectedTag]})"),
                 Tags(ui, ev, SelectedTag),
+                ui.View(ui.Style().H(1).Bg(0x434C5EFF)),
+                ui.Text("Blur and backdrop blur"),
+                BlurDemo(ui),
+                ui.Text("Grid"),
+                GridDemo(ui),
             ]);
         }
         if (dock.Panel("explorer", "Explorer", out Node explorer))
@@ -538,6 +543,51 @@ public struct App : IComponent
     private static readonly string[] tagNames =
         ["layout", "flexbox", "wrap", "text", "SDF", "rounded", "scissor", "zero-alloc", "structs", "GPUI", "Riateu", "Vulkan"];
     private static readonly uint[] tagColors = [0xBF616AFF, 0xD08770FF, 0xEBCB8BFF, 0xA3BE8CFF, 0xB48EADFF, 0x88C0D0FF];
+
+    /// <summary>A frosted card over colored dots (backdrop), and a blurred row of the same dots.</summary>
+    private static Node BlurDemo(UIStack ui)
+    {
+        Node Dots()
+        {
+            var dots = ui.View(ui.Style().FlexRow().Gap(8).ItemsCenter());
+            for (int i = 0; i < tagColors.Length; i++)
+                dots.Child(ui.View(ui.Style().Size(28).RoundedFull().Bg(tagColors[i])));
+            return dots;
+        }
+        return ui.View(ui.Style().FlexCol().Gap(8)).Child([
+            ui.View(ui.Style().Relative().H(56).Px(6).JustifyCenter()).Child([
+                Dots(),
+                ui.Blur(6, backdrop: true, ui.Style().Absolute().Left(40).Top(8).W(160).H(40).Rounded(8)
+                        .Bg(0xFFFFFF26).Border(1, 0xFFFFFF4D).ItemsCenter().JustifyCenter())
+                    .Child(ui.Text("Backdrop")),
+            ]),
+            ui.Blur(4).Child(Dots()),
+        ]);
+    }
+
+    /// <summary>Three columns: a wide cell spanning two, a tall one spanning two rows, and auto-placed fill.</summary>
+    private static Node GridDemo(UIStack ui)
+    {
+        Node Cell(string label, uint color, in Style style = default) =>
+            ui.View(ui.Style().Padding(6).Rounded(4).Bg(color).MergedWith(style))
+                .Child(ui.Text(label).Styled(ui.Style().TextColorOf(0x2E3440FF)));
+        return ui.View(ui.Style().FlexCol().Gap(6)).Child([
+            ui.Grid(3, 6).Child([
+                Cell("col-span-2", tagColors[0], ui.Style().ColSpanOf(2)),
+                Cell("row-span-2", tagColors[1], ui.Style().RowSpanOf(2)),
+                Cell("1", tagColors[2]),
+                Cell("2", tagColors[3]),
+                Cell("col-span-full", tagColors[4], ui.Style().ColSpanOf(short.MaxValue)),
+            ]),
+            ui.View(ui.Style().GridCols(Tracks).Gap(6)).Child([
+                Cell("60px", tagColors[5]),
+                Cell("auto", tagColors[0]),
+                Cell("1fr wraps its text when the column is narrow", tagColors[2]),
+            ]),
+        ]);
+    }
+
+    private static readonly GridTrack[] Tracks = [GridTrack.Px(60), GridTrack.Auto, GridTrack.Fr()];
 
     private static Node Tags(UIStack ui, EventStack ev, int selected)
     {

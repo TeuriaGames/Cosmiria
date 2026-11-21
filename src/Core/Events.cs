@@ -69,6 +69,47 @@ internal abstract class EventBinder
 {
     public abstract void Invoke(int index, UIContext context, in PointerEvent e);
     public abstract void Reset();
+
+    /// <summary>A copy of listener <paramref name="index"/> that survives later builds (null if this kind can't).</summary>
+    public virtual DetachedListener Detach(int index, UIContext context) => null;
+}
+
+/// <summary>
+/// A listener kept past its build (an effect's cleanup). If its component is about to unmount,
+/// <see cref="Prepare"/> keeps a copy of the state for it to run on afterwards.
+/// </summary>
+internal abstract class DetachedListener : EventBinder
+{
+    public abstract void Prepare(UIContext context, int build);
+    public override void Reset() { }
+}
+
+internal sealed class DetachedListener<T, TArg>(Delegate handler, byte kind, TArg arg, int slot, int stableId) : DetachedListener
+    where T : struct, IComponent
+{
+    private T snapshot;
+    private bool unmounted;
+
+    public override void Prepare(UIContext context, int build)
+    {
+        ComponentTable<T> table = context.GetTable<T>();
+        if (table.IsInstance(slot, stableId) && table.SlotInfo(slot, out _, out _, out _, out int last) && last != build)
+        {
+            snapshot = table.Get(slot);
+            unmounted = true;
+        }
+    }
+
+    public override void Invoke(int index, UIContext context, in PointerEvent e)
+    {
+        if (unmounted)
+        {
+            EventBinder<T, TArg>.Call(handler, kind, ref snapshot, e, arg);
+            return;
+        }
+        ComponentTable<T> table = context.GetTable<T>();
+        if (table.IsInstance(slot, stableId)) EventBinder<T, TArg>.Call(handler, kind, ref table.Get(slot), e, arg);
+    }
 }
 
 internal static class EventBinderTypeId
@@ -120,16 +161,27 @@ internal sealed class EventBinder<T, TArg> : EventBinder where T : struct, IComp
         int slot = slots[index];
         if (!table.IsAlive(slot)) return;
 
-        ref T self = ref table.Get(slot);
-        Delegate h = handlers[index];
+        Call(handlers[index], kinds[index], ref table.Get(slot), e, args[index]);
+    }
+
+    internal static void Call(Delegate h, byte kind, ref T self, in PointerEvent e, TArg arg)
+    {
         // The kind byte was written together with the delegate, so the casts are safe.
-        switch (kinds[index])
+        switch (kind)
         {
             case KindPlain: Unsafe.As<Listener<T>>(h)(ref self); break;
-            case KindArg: Unsafe.As<Listener<T, TArg>>(h)(ref self, args[index]); break;
+            case KindArg: Unsafe.As<Listener<T, TArg>>(h)(ref self, arg); break;
             case KindPointer: Unsafe.As<PointerListener<T>>(h)(ref self, e); break;
-            case KindPointerArg: Unsafe.As<PointerListener<T, TArg>>(h)(ref self, e, args[index]); break;
+            case KindPointerArg: Unsafe.As<PointerListener<T, TArg>>(h)(ref self, e, arg); break;
         }
+    }
+
+    public override DetachedListener Detach(int index, UIContext context)
+    {
+        if ((uint)index >= (uint)count) return null;
+        int slot = slots[index];
+        context.GetTable<T>().SlotInfo(slot, out int stableId, out _, out _, out _);
+        return new DetachedListener<T, TArg>(handlers[index], kinds[index], args[index], slot, stableId);
     }
 
     public override void Reset()

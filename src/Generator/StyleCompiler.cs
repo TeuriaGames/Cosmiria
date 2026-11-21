@@ -50,6 +50,8 @@ internal static class StyleCompiler
         "bg-gradient-to-{t|tr|r|br|b|bl|l|tl}", "bg-linear-{N|to-DIR}", "bg-radial", "from-COLOR", "via-COLOR", "to-COLOR",
         "transition[-all|-colors|-opacity|-transform|-none]", "duration-N", "delay-N", "ease-{linear|in|out|in-out}", "opacity-N",
         "[-]translate-{x|y}-{N|N%|full}", "[-]scale[-x|-y]-N", "[-]rotate-N", "origin-{center|top|top-right|right|bottom-right|bottom|bottom-left|left|top-left}",
+        "blur[-none|-sm|-md|-lg|-xl|-2xl|-3xl|-N]", "backdrop-blur[-none|-sm|-md|-lg|-xl|-2xl|-3xl|-N]",
+        "grid", "grid-cols-N", "grid-rows-N", "col-span-{N|full}", "row-span-{N|full}", "col-start-N", "row-start-N",
     };
 
     // Tailwind's font-size scale, in pixels.
@@ -166,6 +168,7 @@ internal static class StyleCompiler
         ("rotate-", ".Rotate", ValueKind.Float, true), ("bg-linear-", ".LinearGradient", ValueKind.Float, true),
         ("scale-x-", ".ScaleXOf", ValueKind.Factor, true), ("scale-y-", ".ScaleYOf", ValueKind.Factor, true), ("scale-", ".Scale", ValueKind.Factor, true),
         ("opacity-", ".Opacity", ValueKind.Fraction, false),
+        ("backdrop-blur-", ".BackdropBlur", ValueKind.Float, false), ("blur-", ".Blur", ValueKind.Float, false),
         ("duration-", ".Duration", ValueKind.Milliseconds, false), ("delay-", ".Delay", ValueKind.Milliseconds, false),
         ("bg-", ".Bg", ValueKind.Color, false), ("from-", ".From", ValueKind.Color, false), ("via-", ".Via", ValueKind.Color, false),
         ("to-", ".To", ValueKind.Color, false),
@@ -353,6 +356,9 @@ internal static class StyleCompiler
             case "flex-wrap": code = ".FlexWrap()"; return null;
             case "flex-nowrap": code = ".FlexNoWrap()"; return null;
             case "flex-1": code = ".Flex1()"; return null;
+            case "grid": code = ".Grid()"; return null;
+            case "col-span-full": code = ".ColSpanOf(short.MaxValue)"; return null;
+            case "row-span-full": code = ".RowSpanOf(short.MaxValue)"; return null;
             case "grow": code = ".Grow()"; return null;
             case "shrink": code = ".Shrink()"; return null;
             case "relative": code = ".Relative()"; return null;
@@ -456,12 +462,47 @@ internal static class StyleCompiler
             return null;
         }
 
+        foreach (var (prefix, method) in GridUtilities)
+        {
+            if (!TryPrefix(u, prefix, out rest)) continue;
+            if (!int.TryParse(rest, NumberStyles.None, CultureInfo.InvariantCulture, out int count) || count < 1)
+                return $"expected a whole number of 1 or more ({prefix}3) but found '{rest}'";
+            code = $"{method}({count})";
+            return null;
+        }
+        if (u == "blur" || u == "backdrop-blur") { code = u == "blur" ? ".Blur(8f)" : ".BackdropBlur(8f)"; return null; }
+        if (TryPrefix(u, "backdrop-blur-", out rest)) return BlurArg(rest, ".BackdropBlur", out code);
+        if (TryPrefix(u, "blur-", out rest)) return BlurArg(rest, ".Blur", out code);
+
         string transform = TranslateTransform(u, out code);
         if (transform != "") return transform;
         if (TryPrefix(u, "grow-", out rest)) return NumberArg(rest, ".Grow", out code);
         if (TryPrefix(u, "shrink-", out rest)) return NumberArg(rest, ".Shrink", out code);
 
         return "";
+    }
+
+    private static readonly (string prefix, string method)[] GridUtilities =
+    {
+        ("grid-cols-", ".GridCols"), ("grid-rows-", ".GridRows"), ("col-span-", ".ColSpanOf"), ("row-span-", ".RowSpanOf"),
+        ("col-start-", ".ColStartOf"), ("row-start-", ".RowStartOf"),
+    };
+
+    private static readonly (string name, float radius)[] BlurSizes =
+    {
+        ("none", 0), ("sm", 4), ("md", 12), ("lg", 16), ("xl", 24), ("2xl", 40), ("3xl", 64),
+    };
+
+    /// <summary>blur-sm, blur-lg, ... (Tailwind's scale) or blur-N in pixels.</summary>
+    private static string BlurArg(string rest, string method, out string code)
+    {
+        code = null;
+        foreach (var (name, radius) in BlurSizes)
+        {
+            if (rest == name) { code = $"{method}({Float(radius)})"; return null; }
+        }
+        if (IsNumber(rest)) return NumberArg(rest, method, out code);
+        return "blur sizes are none, sm, md, lg, xl, 2xl, 3xl (or a number of pixels)";
     }
 
     private static readonly (string dir, int angle)[] GradientDirections =

@@ -139,7 +139,12 @@ ui.Suspense(static ui => ui.Mount<ProfileCard>(), static ui => ui.Text("Loading.
 - In C#, `ui.Suspense(content, fallback, failed)` takes static lambdas (`Suspense(arg, (ui, arg) => ..., ...)` passes an argument without a closure); mount a component in `content` to reach its state.
 
 ## Layout & rendering
-- Layout is flexbox: grow and shrink (CSS-style freeze-and-redistribute), justify, align/stretch, `Gap(x, y)`, margin, padding, min/max, %, absolute insets, and overflow hidden/scroll.
+- Layout is flexbox (and grid, below): grow and shrink (CSS-style freeze-and-redistribute), justify, align/stretch, `Gap(x, y)`, margin, padding, min/max, %, absolute insets, and overflow hidden/scroll.
+- **Grid**: `ui.Grid(columns, gap)` or `Style.GridCols(n)` (`grid grid-cols-3 gap-4`) lays children out in cells, row by row. Rows are added as needed and are as tall as their tallest item.
+  - **Tracks:** `GridCols(n)` makes n equal columns, each `1fr` with no content minimum, like Tailwind. `GridCols(GridTrack.Px(60), GridTrack.Auto, GridTrack.Fr(2))` mixes fixed, content-sized and proportional columns; keep that array in a static field, since it isn't copied. `GridRows` takes the same values: n equal rows share the container's free height when it has one.
+  - **Placement:** `ColSpanOf`/`RowSpanOf` (`col-span-2`, `row-span-full`), `ColStartOf`/`RowStartOf` (`col-start-2`). Auto-placed items fill the first free cells after the previous one.
+  - **Alignment:** items stretch to their cell unless they have a size; `items-*`/`self-*` align them vertically. Gaps come from `Gap`/`GapX`/`GapY`, and `OverflowScroll` scrolls the rows.
+  - **Not supported:** `minmax()`, named areas, `auto-fill`/`auto-fit`, dense packing, and horizontal item alignment.
 - **Flex wrap**: `FlexWrap()` breaks items onto new lines. Grow, shrink and justify apply per line, lines are separated by the cross-axis gap, and stretch fills the line's thickness. A wrapping container with `OverflowScroll()` scrolls across its lines, so a row-wrap grid scrolls vertically.
 - **Text wrapping**: on by default and inherited. Text breaks at spaces to fit its box, and words longer than a line break between characters. Height follows the line count, and an item never shrinks below its longest word. `NoWrap()` keeps text on one line; the default button style uses it.
 - Items with an explicit `W(...)` keep that width when space runs out. Auto-sized items shrink, but never below their content size: min-content width, or measured height in a column.
@@ -257,10 +262,19 @@ if (assets.IsExpanded)
 ```csharp
 ui.Effect(ev.Listener(static (ref Editor e) => e.LoadLevel()), LevelIndex);   // after the build, on mount and when LevelIndex changes
 ui.Effect(ev.Listener(static (ref Editor e) => e.Connect()));                 // once, on mount
+ui.Effect(ev.Listener(static (ref Feed f, int room) => f.Join(room), Room), Room,
+    cleanup: ev.Listener(static (ref Feed f, int room) => f.Leave(room), Room)); // Leave(old room), then Join(new room)
+ui.Effect(ev.Listener(static (ref Editor e) => e.Connect()),
+    ev.Listener(static (ref Editor e) => e.Disconnect()));                     // mount / unmount
+```
+```xml
+<Effect deps="Room" run="Join(Room)" cleanup="Leave(Room)"/>
 ```
 - **What it is:** a side effect, like React's `useEffect`. It runs after a build, not during it, so it can change state freely; that change triggers another build.
 - **When it runs:** after the first build in which it appears, then whenever `deps` changes (compared with `Equals`; use a tuple for several values). It's keyed like own values: call site and occurrence, or `key`.
-- **No cleanup callback:** nothing runs when the component disappears.
+- **Cleanup (optional):** a listener that undoes a run. It runs before the effect runs again (its deps changed), and after the build where the effect isn't called any more (a condition went false) or its component unmounts. After an unmount it runs on a copy of the component's last state, and writes to that copy are dropped.
+  - Like any listener, it sees the component's current state when it runs. To act on the values the run used, pass them as the listener's argument (`Room` above): the argument is the one given in the build where the effect ran.
+  - Components kept alive while hidden (`keepAlive: true`) keep their effects, so no cleanup runs. `UIContext.Dispose` runs every cleanup still pending.
 
 ## Transforms
 Like CSS `transform`, transforms are paint-only: the element keeps its layout box, siblings don't move, and children are transformed along with it.
@@ -312,6 +326,25 @@ ui.Style().RadialGradient().From(Tailwind.Amber300).To(Tailwind.Rose600)
 - **Rendering:** colors blend with premultiplied alpha, so fades don't go muddy. The gradient replaces the background color and is clipped by `rounded-*` and borders like a plain background.
 - **Merging:** the parts merge separately, so `hover:from-…` changes only the starting color.
 - **Not supported:** transitions don't animate gradients yet, and gradients don't apply to text or borders.
+
+## Blur
+```csharp
+ui.Blur(4).Child(content)                                   // blurs its children
+ui.Blur(12, backdrop: true, ui.Style().Bg(0xFFFFFF26).Rounded(8)).Child(ui.Text("Glass"))
+ui.Style().Blur(4)  ui.Style().BackdropBlur(12)             // the same, on any element
+```
+```xml
+<View style="blur-sm">...</View>
+<View style="backdrop-blur-md bg-white/15 rounded-8">Glass</View>
+```
+- **Blur** (CSS `filter: blur()`) blurs the element and its children. The blur spreads up to 3× the radius past the element's box.
+- **Backdrop** (CSS `backdrop-filter: blur()`) blurs what's already drawn behind the element, inside its rounded box. Its own background, border and children are then drawn on top, sharp. A translucent `Bg` gives frosted glass.
+- **Radius:** the radius is the Gaussian's standard deviation in pixels. Classes: `blur`, `blur-{none|sm|md|lg|xl|2xl|3xl}` (0, 4, 12, 16, 24, 40, 64; plain `blur` is 8), `blur-N` and `blur-[N]`, and the same with `backdrop-`.
+- **Cost:** a frame containing a blur is redrawn in full each frame instead of from cached layers, plus two small passes per blur. Larger radii are blurred at a lower resolution, so the cost per blur stays about the same.
+- **Limits:**
+  - When the UI is drawn with `LoadOp.Load` over a game frame, the backdrop only sees what the UI itself drew. The previous contents of the target can't be read.
+  - Popups inside a blurred element aren't blurred.
+  - A rotated backdrop samples its bounding box.
 
 ## Reactivity
 `BindableValue<T>` is reactive. Change it from anywhere, game code included, and the UI repaints by itself, with no `ui.Notify()`. `Computed<T>` derives values from reactive ones:

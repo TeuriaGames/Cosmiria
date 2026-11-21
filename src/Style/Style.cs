@@ -3,7 +3,19 @@ using Riateu.Graphics;
 
 namespace Cosmiria;
 
-public enum Display : byte { Flex, None }
+public enum Display : byte { Flex, None, Grid }
+
+public enum GridTrackKind : byte { Fr, Px, Auto }
+
+/// <summary>A grid column or row size: a fixed size, a share of the free space (fr), or its content (auto).</summary>
+public readonly struct GridTrack(GridTrackKind kind, float value)
+{
+    public readonly GridTrackKind Kind = kind;
+    public readonly float Value = value;
+    public static GridTrack Fr(float fr = 1) => new(GridTrackKind.Fr, fr);
+    public static GridTrack Px(float px) => new(GridTrackKind.Px, px);
+    public static readonly GridTrack Auto = new(GridTrackKind.Auto, 0);
+}
 public enum FlexDirection : byte { Row, Column }
 public enum Justify : byte { Start, Center, End, SpaceBetween, SpaceAround, SpaceEvenly }
 public enum Align : byte { Auto, Start, Center, End, Stretch }
@@ -152,6 +164,12 @@ public enum StyleFlags : ulong
     Gradient = 1ul << 34,
     /// <summary>Box shadow; which parts are in <see cref="Style.ShadowMask"/>.</summary>
     Shadow = 1ul << 35,
+    Blur = 1ul << 36,
+    BackdropBlur = 1ul << 37,
+    GridColumns = 1ul << 38,
+    GridRows = 1ul << 39,
+    /// <summary>Grid item placement: which parts are non-zero in ColStart/ColSpan/RowStart/RowSpan.</summary>
+    GridPlacement = 1ul << 40,
 
     Inherited = TextColor | Font | TextSize | TextWrap | TextAlign,
 }
@@ -232,6 +250,17 @@ public struct Style
     /// <summary>Bit 0: geometry set, bit 1: color set explicitly (merge per part, like Tailwind's shadow color).</summary>
     public byte ShadowMask;
 
+    /// <summary>Gaussian blur of the element and its children (CSS <c>filter: blur()</c>), as the standard deviation.</summary>
+    public float BlurRadius;
+    /// <summary>Gaussian blur of what is behind the element (CSS <c>backdrop-filter: blur()</c>).</summary>
+    public float BackdropBlurRadius;
+
+    // ---- Grid container: N equal (1fr) tracks, or explicit Tracks when set.
+    public int GridColumnCount, GridRowCount;
+    public GridTrack[] GridColumnTracks, GridRowTracks;
+    // ---- Grid item: 1-based start line (0 = auto-placed) and span (0 = 1).
+    public short ColStart, ColSpan, RowStart, RowSpan;
+
     /// <summary>A shadow will be drawn.</summary>
     public readonly bool HasShadow => (Set & StyleFlags.Shadow) != 0 && (ShadowMask & 1) != 0 && ShadowColor.A > 0;
 
@@ -306,6 +335,17 @@ public struct Style
             if ((o.ShadowMask & 2) != 0) ShadowColor = o.ShadowColor;
             ShadowMask |= o.ShadowMask;
         }
+        if ((s & StyleFlags.GridColumns) != 0) { GridColumnCount = o.GridColumnCount; GridColumnTracks = o.GridColumnTracks; }
+        if ((s & StyleFlags.GridRows) != 0) { GridRowCount = o.GridRowCount; GridRowTracks = o.GridRowTracks; }
+        if ((s & StyleFlags.GridPlacement) != 0)
+        {
+            if (o.ColStart != 0) ColStart = o.ColStart;
+            if (o.ColSpan != 0) ColSpan = o.ColSpan;
+            if (o.RowStart != 0) RowStart = o.RowStart;
+            if (o.RowSpan != 0) RowSpan = o.RowSpan;
+        }
+        if ((s & StyleFlags.Blur) != 0) BlurRadius = o.BlurRadius;
+        if ((s & StyleFlags.BackdropBlur) != 0) BackdropBlurRadius = o.BackdropBlurRadius;
         if ((s & StyleFlags.Transition) != 0)
         {
             if ((o.TransitionMask & 1) != 0) TransitionDuration = o.TransitionDuration;
@@ -398,6 +438,23 @@ public struct Style
     public readonly Style GapY(float y) { With(StyleFlags.RowGap, out var s); s.RowGap = y; return s; }
 
     /// <summary>Let items wrap onto new lines when they don't fit (CSS flex-wrap: wrap).</summary>
+    /// <summary>CSS grid: children fill the cells row by row; see <see cref="GridCols(int)"/> and <see cref="ColSpanOf"/>.</summary>
+    public readonly Style Grid() { With(StyleFlags.Display, out var s); s.Display = Display.Grid; return s; }
+    /// <summary><paramref name="count"/> equal columns (Tailwind's grid-cols-N: each minmax(0, 1fr)).</summary>
+    public readonly Style GridCols(int count) { With(StyleFlags.GridColumns | StyleFlags.Display, out var s); s.Display = Display.Grid; s.GridColumnCount = Math.Max(1, count); s.GridColumnTracks = null; return s; }
+    /// <summary>Columns of the given sizes. Keep the array (e.g. static readonly): it isn't copied.</summary>
+    public readonly Style GridCols(params GridTrack[] tracks) { With(StyleFlags.GridColumns | StyleFlags.Display, out var s); s.Display = Display.Grid; s.GridColumnCount = tracks.Length; s.GridColumnTracks = tracks; return s; }
+    /// <summary>At least <paramref name="count"/> equal rows; more are added (sized to content) as needed.</summary>
+    public readonly Style GridRows(int count) { With(StyleFlags.GridRows, out var s); s.GridRowCount = Math.Max(0, count); s.GridRowTracks = null; return s; }
+    /// <inheritdoc cref="GridCols(GridTrack[])"/>
+    public readonly Style GridRows(params GridTrack[] tracks) { With(StyleFlags.GridRows, out var s); s.GridRowCount = tracks.Length; s.GridRowTracks = tracks; return s; }
+    /// <summary>Cover <paramref name="span"/> columns (<see cref="short.MaxValue"/>: the whole row).</summary>
+    public readonly Style ColSpanOf(int span) { With(StyleFlags.GridPlacement, out var s); s.ColSpan = (short)Math.Clamp(span, 1, short.MaxValue); return s; }
+    public readonly Style RowSpanOf(int span) { With(StyleFlags.GridPlacement, out var s); s.RowSpan = (short)Math.Clamp(span, 1, short.MaxValue); return s; }
+    /// <summary>Start at column line <paramref name="line"/> (1 is the first column).</summary>
+    public readonly Style ColStartOf(int line) { With(StyleFlags.GridPlacement, out var s); s.ColStart = (short)Math.Clamp(line, 1, short.MaxValue); return s; }
+    public readonly Style RowStartOf(int line) { With(StyleFlags.GridPlacement, out var s); s.RowStart = (short)Math.Clamp(line, 1, short.MaxValue); return s; }
+
     public readonly Style FlexWrap() { With(StyleFlags.FlexWrap, out var s); s.Wrapping = WrapMode.Wrap; return s; }
     public readonly Style FlexNoWrap() { With(StyleFlags.FlexWrap, out var s); s.Wrapping = WrapMode.NoWrap; return s; }
 
@@ -582,6 +639,13 @@ public struct Style
         s.ShadowMask |= 1;
         return s;
     }
+
+    /// <summary>Blur the element and everything inside it (CSS <c>filter: blur(radius)</c>).</summary>
+    public readonly Style Blur(float radius) { With(StyleFlags.Blur, out var s); s.BlurRadius = MathF.Max(0, radius); return s; }
+    /// <summary>Blur what is drawn behind the element, inside its rounded box (CSS <c>backdrop-filter: blur(radius)</c>).</summary>
+    public readonly Style BackdropBlur(float radius) { With(StyleFlags.BackdropBlur, out var s); s.BackdropBlurRadius = MathF.Max(0, radius); return s; }
+    public readonly float EffectiveBlur => Has(StyleFlags.Blur) ? BlurRadius : 0f;
+    public readonly float EffectiveBackdropBlur => Has(StyleFlags.BackdropBlur) ? BackdropBlurRadius : 0f;
 
     public readonly Style Opacity(float opacity) { With(StyleFlags.Opacity, out var s); s.OpacityValue = Math.Clamp(opacity, 0, 1); return s; }
     /// <summary>Effective opacity (1 when not set).</summary>

@@ -13,7 +13,7 @@ namespace Cosmiria;
 /// </list>
 /// Styles must already be resolved (inheritance + hover/active) before calling.
 /// </summary>
-internal sealed class FlexLayout
+internal sealed partial class FlexLayout
 {
     private struct Line
     {
@@ -148,6 +148,10 @@ internal sealed class FlexLayout
             minContent = 40;
             dependent = false;
         }
+        else if (s.Display == Display.Grid)
+        {
+            MeasureGrid(ref n, ref s, inner, out cw, out ch, out minContent, out dependent, out minH);
+        }
         else
         {
             MeasureContainer(ref n, ref s, inner, out cw, out ch, out minContent, out dependent, out minH);
@@ -275,6 +279,20 @@ internal sealed class FlexLayout
         {
             cx0 = MathF.Max(cx0, n.X + inset); cy0 = MathF.Max(cy0, n.Y + inset);
             cx1 = MathF.Min(cx1, n.X + n.W - inset); cy1 = MathF.Min(cy1, n.Y + n.H - inset);
+        }
+
+        if (s.Display == Display.Grid)
+        {
+            for (int c = n.FirstChild; c >= 0; c = ui.Nodes[c].NextSibling)
+            {
+                ref NodeData cn = ref ui.Nodes[c];
+                if (ui.Styles[c].IsOverlay) { cn.ClipX0 = 0; cn.ClipY0 = 0; cn.ClipX1 = rootW; cn.ClipY1 = rootH; }
+                else { cn.ClipX0 = cx0; cn.ClipY0 = cy0; cn.ClipX1 = cx1; cn.ClipY1 = cy1; }
+                if (ui.Styles[c].Display == Display.None) cn.W = cn.H = 0;
+            }
+            ArrangeGrid(ref n, ref s, contentX, contentY, contentW, contentH);
+            ArrangeChildren(ref n, inset);
+            return;
         }
 
         bool row = s.Direction == FlexDirection.Row;
@@ -405,7 +423,12 @@ internal sealed class FlexLayout
         flowTop = flowBase;
         lineTop = lineBase;
 
-        // ---- absolute children, then recurse
+        ArrangeChildren(ref n, inset);
+    }
+
+    /// <summary>Place absolute and fixed children, then arrange every child's own content.</summary>
+    private void ArrangeChildren(ref NodeData n, float inset)
+    {
         for (int c = n.FirstChild; c >= 0; c = ui.Nodes[c].NextSibling)
         {
             ref Style cs = ref ui.Styles[c];

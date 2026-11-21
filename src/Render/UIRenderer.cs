@@ -36,11 +36,34 @@ internal sealed class UIRenderer : IDisposable
         /// drawn every frame instead of being cached in a layer. Always a call of its own.
         /// </summary>
         public bool Live;
+        public EffectKind Effect;
+        /// <summary>Pixels the effect reads (and, for a blur group, covers), in the target.</summary>
+        public Rectangle Region;
+        /// <summary>Blur standard deviation in pixels.</summary>
+        public float Sigma;
+    }
+
+    /// <summary>
+    /// Calls that need passes of their own. <see cref="Backdrop"/> blurs what's been drawn so far
+    /// under its region and draws it with its one quad. The calls between <see cref="GroupBegin"/>
+    /// and <see cref="GroupEnd"/> are drawn into a texture of their own, which is blurred and drawn
+    /// with the end call's quad.
+    /// </summary>
+    private enum EffectKind : byte { None, Backdrop, GroupBegin, GroupEnd }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct BlurUniforms
+    {
+        public Vector4 SourceRect;
+        public Vector2 Step;
+        public float Sigma;
+        public float Taps;
     }
 
     private readonly GraphicsDevice device;
     private readonly TextureFormat targetFormat;
     private readonly GraphicsPipeline pipeline;
+    private readonly GraphicsPipeline blurPipeline;
     private readonly Sampler sampler;
     private readonly Sampler nearestSampler;
 
@@ -130,6 +153,29 @@ internal sealed class UIRenderer : IDisposable
             .SetRasterizerState(RasterizerState.CCW_CullNone)
             .Build(device);
 
+        using var blurVs = LoadShader("Blur.vert");
+        using var blurFs = LoadShader("Blur.frag");
+        var blurVert = new Shader(device, blurVs, "main", new ShaderCreateInfo
+        {
+            ShaderStage = ShaderStage.Vertex,
+            ShaderFormat = GraphicsDevice.BackendShaderFormat,
+        });
+        var blurFrag = new Shader(device, blurFs, "main", new ShaderCreateInfo
+        {
+            ShaderStage = ShaderStage.Fragment,
+            ShaderFormat = GraphicsDevice.BackendShaderFormat,
+            SamplerCount = 1,
+            UniformBufferCount = 1,
+        });
+        blurPipeline = GraphicsPipeline.CreateBuilder(blurVert, blurFrag)
+            .SetAttachmentInfo(new GraphicsPipelineAttachmentInfo(
+                new ColorAttachmentDescription(targetFormat, ColorTargetBlendState.None)))
+            .SetDepthStenctilState(DepthStencilState.Disable)
+            .SetMultisampleState(MultisampleState.None)
+            .SetPrimitiveType(PrimitiveType.TriangleList)
+            .SetRasterizerState(RasterizerState.CCW_CullNone)
+            .Build(device);
+
         sampler = new Sampler(device, SamplerCreateInfo.LinearClamp);
         var nearest = SamplerCreateInfo.LinearClamp;
         nearest.MinFilter = Filter.Nearest;
@@ -174,6 +220,7 @@ internal sealed class UIRenderer : IDisposable
         if (textCache.Count > 4096) PruneTextCache();
         quadCount = 0;
         callCount = 0;
+        effectCount = 0;
         deferredCount = 0;
         paintingOverlays = false;
         images.BeginPaint();
@@ -280,6 +327,10 @@ internal sealed class UIRenderer : IDisposable
         float opacity = s.EffectiveOpacity;
         if (opacity <= 0) { if (hasOwn) SetTransform(saved); return; }
         int firstQuad = quadCount;
+        float backdrop = s.EffectiveBackdropBlur;
+        if (backdrop > 0) PushBackdrop(ref n, ref s, backdrop);
+        float blur = s.EffectiveBlur;
+        int group = blur > 0 ? BeginBlur(ref n, blur) : -1;
         PaintNodeContent(index, ref n, ref s);
         PaintDecorations(ref n, ref s);
         if (opacity < 1)
@@ -291,7 +342,98 @@ internal sealed class UIRenderer : IDisposable
                 quads[i].BorderColor.W *= opacity;
             }
         }
+        if (group >= 0) EndBlur(group, ref n);
         if (hasOwn) SetTransform(saved);
+    }
+
+    private int effectCount;
+
+    /// <summary>Screen bounding box of the node grown by 3 sigma, in target pixels.</summary>
+    private Rectangle EffectRegion(ref NodeData n, float sigma)
+    {
+        Vector2 a = Vector2.Transform(new Vector2(n.X, n.Y), transform), b = Vector2.Transform(new Vector2(n.X + n.W, n.Y), transform);
+        Vector2 c = Vector2.Transform(new Vector2(n.X, n.Y + n.H), transform), d = Vector2.Transform(new Vector2(n.X + n.W, n.Y + n.H), transform);
+        Vector2 min = Vector2.Min(Vector2.Min(a, b), Vector2.Min(c, d)), max = Vector2.Max(Vector2.Max(a, b), Vector2.Max(c, d));
+        float pad = MathF.Ceiling(sigma * 3);
+        int x0 = Math.Clamp((int)MathF.Floor(min.X * scissorScaleX - pad), 0, targetW);
+        int y0 = Math.Clamp((int)MathF.Floor(min.Y * scissorScaleY - pad), 0, targetH);
+        int x1 = Math.Clamp((int)MathF.Ceiling(max.X * scissorScaleX + pad), 0, targetW);
+        int y1 = Math.Clamp((int)MathF.Ceiling(max.Y * scissorScaleY + pad), 0, targetH);
+        return new Rectangle(x0, y0, x1 - x0, y1 - y0);
+    }
+
+    /// <summary>An effect call; Backdrop and GroupEnd own the quad pushed right after it.</summary>
+    private void AddEffect(EffectKind kind, Rectangle scissor, Rectangle region, float sigma)
+    {
+        if (callCount == calls.Length) Array.Resize(ref calls, callCount * 2);
+        calls[callCount++] = new DrawCall
+        {
+            Effect = kind, Scissor = scissor, Region = region, Sigma = sigma,
+            Offset = (uint)quadCount, Count = kind == EffectKind.GroupBegin ? 0u : 1u,
+        };
+        effectCount++;
+    }
+
+    /// <summary>The blurred backdrop, drawn inside the node's rounded box before its background.</summary>
+    private void PushBackdrop(ref NodeData n, ref Style s, float radius)
+    {
+        Rectangle scissor = ClipScissor(n.ClipX0, n.ClipY0, n.ClipX1, n.ClipY1);
+        if (scissor.Width <= 0 || scissor.Height <= 0 || n.W <= 0 || n.H <= 0) return;
+        float sigma = radius * scissorScaleY * transformScale;
+        Rectangle region = EffectRegion(ref n, sigma);
+        if (region.Width <= 0 || region.Height <= 0) return;
+
+        AddEffect(EffectKind.Backdrop, scissor, region, sigma);
+        ref UIQuad q = ref NextQuad();
+        Vector2 p0 = Vector2.Transform(new Vector2(n.X, n.Y), transform);
+        Vector2 p1 = Vector2.Transform(new Vector2(n.X + n.W, n.Y + n.H), transform);
+        q.Rect = new Vector4(n.X, n.Y, n.W, n.H);
+        q.UV = new Vector4(
+            (p0.X * scissorScaleX - region.X) / region.Width, (p0.Y * scissorScaleY - region.Y) / region.Height,
+            (p1.X * scissorScaleX - region.X) / region.Width, (p1.Y * scissorScaleY - region.Y) / region.Height);
+        q.Color = Vector4.One;
+        q.BorderColor = default;
+        q.BorderWidth = 0;
+        q.Radius = ClampRadius(s.Radius, n.W, n.H);
+        q.Mode = UIQuad.ModeImage;
+    }
+
+    /// <summary>Start drawing the node's content into a blur group; -1 when nothing of it can show.</summary>
+    private int BeginBlur(ref NodeData n, float radius)
+    {
+        float sigma = radius * scissorScaleY * transformScale;
+        Rectangle region = EffectRegion(ref n, sigma);
+        if (region.Width <= 0 || region.Height <= 0) return -1;
+        int index = callCount;
+        AddEffect(EffectKind.GroupBegin, default, region, sigma);
+        return index;
+    }
+
+    /// <summary>Close the group: its blurred texture is drawn over the region, clipped like the node.</summary>
+    private void EndBlur(int begin, ref NodeData n)
+    {
+        bool any = false;
+        for (int i = begin + 1; i < callCount && !any; i++) any = calls[i].Count > 0;
+        Rectangle scissor = ClipScissor(n.ClipX0, n.ClipY0, n.ClipX1, n.ClipY1);
+        if (!any || scissor.Width <= 0 || scissor.Height <= 0)
+        {
+            for (int i = begin; i < callCount; i++) if (calls[i].Effect != EffectKind.None) effectCount--;
+            callCount = begin;
+            return;
+        }
+
+        Rectangle region = calls[begin].Region;
+        AddEffect(EffectKind.GroupEnd, scissor, region, calls[begin].Sigma);
+        ref UIQuad q = ref NextQuad();
+        q.Rect = new Vector4(region.X / scissorScaleX, region.Y / scissorScaleY, region.Width / scissorScaleX, region.Height / scissorScaleY);
+        q.Matrix = new Vector4(1, 0, 0, 1);
+        q.Translate = Vector2.Zero;
+        q.UV = new Vector4(0, 0, 1, 1);
+        q.Color = Vector4.One;
+        q.BorderColor = default;
+        q.BorderWidth = 0;
+        q.Radius = default;
+        q.Mode = UIQuad.ModeImage;
     }
 
     /// <summary>Overlay scrollbar thumb, and the keyboard focus ring (CSS :focus-visible).</summary>
@@ -895,7 +1037,7 @@ internal sealed class UIRenderer : IDisposable
         if (!newCall)
         {
             ref DrawCall last = ref calls[callCount - 1];
-            if (!last.Scissor.Equals(scissor)) newCall = true;
+            if (last.Effect != EffectKind.None || !last.Scissor.Equals(scissor)) newCall = true;
             else if (live || last.Live) newCall = true; // live textures get calls of their own
             else if (image != null && last.SlotBound && (last.Image != image || last.Nearest != nearest)) newCall = true;
         }
@@ -909,7 +1051,12 @@ internal sealed class UIRenderer : IDisposable
         ref DrawCall call = ref calls[callCount - 1];
         call.Count++;
         if (image != null) { call.Image = image; call.SlotBound = true; call.Nearest = nearest; }
+        return ref NextQuad();
+    }
 
+    /// <summary>Append a quad with the current transform (the caller counts it in its call).</summary>
+    private ref UIQuad NextQuad()
+    {
         if (quadCount == quads.Length) Array.Resize(ref quads, quadCount * 2);
         ref UIQuad q = ref quads[quadCount++];
         q.Gradient = default; // slots are reused: only quads that set a gradient have one
@@ -1013,6 +1160,14 @@ internal sealed class UIRenderer : IDisposable
         drawPending = false;
 
         var uniforms = new UIUniforms { ViewProjection = Matrix4x4.CreateOrthographicOffCenter(0, logicalW, logicalH, 0, -1, 1) };
+        if (effectCount > 0 && quadCount > 0)
+        {
+            ReleaseLayers();
+            RenderEffects(cmd, target, uniforms, logicalW, logicalH, loadOp, clearColor);
+            return;
+        }
+        ReleaseEffectTextures();
+
         int live = 0;
         for (int i = 0; i < callCount; i++) if (calls[i].Live && calls[i].Count > 0) live++;
 
@@ -1086,6 +1241,177 @@ internal sealed class UIRenderer : IDisposable
             from = i + 1;
         }
         layersValid = true;
+    }
+
+    // ------------------------------------------------------------------ blur effects
+
+    // The frame is drawn into `scene` (the target can't be read back), blur groups into a
+    // texture per nesting depth, and blurs go through two downscaled textures per size.
+    private Texture scene;
+    private readonly List<Texture> groupTargets = new();
+    private readonly Dictionary<(uint W, uint H, int Pass), (Texture Texture, int Frame)> blurTextures = new();
+    private int effectFrame;
+
+    /// <summary>A frame with blurs: drawn every frame (no cached layers), then composited onto the target.</summary>
+    private void RenderEffects(CommandBuffer cmd, Texture target, UIUniforms uniforms, float logicalW, float logicalH, LoadOp loadOp, Color clearColor)
+    {
+        effectFrame++;
+        scene = EnsureTarget(scene, target.Width, target.Height);
+        EnsureCompositeQuad(cmd, logicalW, logicalH);
+        int drawn = Execute(cmd, scene, 0, callCount, 0, loadOp == LoadOp.Clear ? clearColor : new Color(0, 0, 0, 0), uniforms);
+
+        RenderPass pass = cmd.BeginRenderPass(new ColorTargetInfo(target, clearColor, false, loadOp));
+        pass.BindGraphicsPipeline(pipeline);
+        pass.BindStorageVertexBuffer(compositeBuffer);
+        pass.BindFragmentSamplers(new TextureSamplerBinding(glyphs.Texture, nearestSampler), new TextureSamplerBinding(scene, nearestSampler));
+        pass.SetScissor(new Rectangle(0, 0, (int)target.Width, (int)target.Height));
+        uniforms.QuadOffset = 0;
+        cmd.PushVertexUniformData(uniforms, 0);
+        pass.DrawPrimitives(4, 1, 0, 0);
+        cmd.EndRenderPass(pass);
+        FrameDrawCalls = drawn + 1;
+        PruneBlurTextures();
+    }
+
+    /// <summary>Calls [from, to) into <paramref name="dest"/>, cleared first; effects end the pass to read what's there.</summary>
+    private int Execute(CommandBuffer cmd, Texture dest, int from, int to, int depth, Color clear, UIUniforms uniforms)
+    {
+        RenderPass pass = cmd.BeginRenderPass(new ColorTargetInfo(dest, clear, true, LoadOp.Clear));
+        int drawn = 0;
+        for (int i = from; i < to; i++)
+        {
+            if (calls[i].Effect == EffectKind.None)
+            {
+                int end = i + 1;
+                while (end < to && calls[end].Effect == EffectKind.None) end++;
+                drawn += DrawRange(cmd, pass, uniforms, i, end);
+                i = end - 1;
+                continue;
+            }
+
+            cmd.EndRenderPass(pass);
+            Texture blurred;
+            int composite = i;
+            if (calls[i].Effect == EffectKind.Backdrop)
+            {
+                blurred = Blur(cmd, dest, calls[i].Region, calls[i].Sigma);
+            }
+            else
+            {
+                composite = GroupEnd(i);
+                if (depth == groupTargets.Count) groupTargets.Add(null);
+                Texture group = groupTargets[depth] = EnsureTarget(groupTargets[depth], dest.Width, dest.Height);
+                drawn += Execute(cmd, group, i + 1, composite, depth + 1, new Color(0, 0, 0, 0), uniforms);
+                blurred = Blur(cmd, group, calls[i].Region, calls[i].Sigma);
+                i = composite;
+            }
+
+            pass = cmd.BeginRenderPass(new ColorTargetInfo(dest, default, false, LoadOp.Load));
+            ref DrawCall call = ref calls[composite];
+            pass.BindGraphicsPipeline(pipeline);
+            pass.BindStorageVertexBuffer(gpuBuffer);
+            pass.BindFragmentSamplers(new TextureSamplerBinding(glyphs.Texture, sampler), new TextureSamplerBinding(blurred, sampler));
+            pass.SetScissor(call.Scissor);
+            uniforms.QuadOffset = call.Offset;
+            cmd.PushVertexUniformData(uniforms, 0);
+            pass.DrawPrimitives(4, 1, 0, 0);
+            drawn++;
+        }
+        cmd.EndRenderPass(pass);
+        return drawn;
+    }
+
+    private int GroupEnd(int begin)
+    {
+        int depth = 0;
+        for (int i = begin + 1; i < callCount; i++)
+        {
+            if (calls[i].Effect == EffectKind.GroupBegin) depth++;
+            else if (calls[i].Effect == EffectKind.GroupEnd && depth-- == 0) return i;
+        }
+        return callCount;
+    }
+
+    /// <summary>
+    /// Separable Gaussian of <paramref name="region"/> of <paramref name="source"/>: horizontal into
+    /// a texture narrowed by the downscale factor, then vertical into one shortened by it. Larger
+    /// blurs downscale more, so the tap count stays small.
+    /// </summary>
+    private Texture Blur(CommandBuffer cmd, Texture source, Rectangle region, float sigma)
+    {
+        int scale = Math.Clamp((int)(sigma / 3), 1, 8);
+        uint w = (uint)Math.Max(1, (region.Width + scale - 1) / scale);
+        uint h = (uint)Math.Max(1, (region.Height + scale - 1) / scale);
+        Texture horizontal = BlurTexture(w, (uint)region.Height, 0);
+        Texture vertical = BlurTexture(w, h, 1);
+
+        float step = MathF.Max(1, sigma / 4);
+        float taps = MathF.Min(MathF.Ceiling(sigma * 3 / step), 32);
+        float sw = source.Width, sh = source.Height;
+        BlurPass(cmd, source, horizontal, new BlurUniforms
+        {
+            SourceRect = new Vector4(region.X / sw, region.Y / sh, region.Width / sw, region.Height / sh),
+            Step = new Vector2(step / sw, 0),
+            Sigma = sigma / step,
+            Taps = taps,
+        });
+        BlurPass(cmd, horizontal, vertical, new BlurUniforms
+        {
+            SourceRect = new Vector4(0, 0, 1, 1),
+            Step = new Vector2(0, step / region.Height),
+            Sigma = sigma / step,
+            Taps = taps,
+        });
+        return vertical;
+    }
+
+    private void BlurPass(CommandBuffer cmd, Texture source, Texture dest, in BlurUniforms uniforms)
+    {
+        RenderPass pass = cmd.BeginRenderPass(new ColorTargetInfo(dest, default, true, LoadOp.DontCare));
+        pass.BindGraphicsPipeline(blurPipeline);
+        pass.BindFragmentSampler(new TextureSamplerBinding(source, sampler));
+        cmd.PushFragmentUniformData(uniforms, 0);
+        pass.DrawPrimitives(3, 1, 0, 0);
+        cmd.EndRenderPass(pass);
+    }
+
+    private Texture EnsureTarget(Texture texture, uint w, uint h)
+    {
+        if (texture != null && texture.Width == w && texture.Height == h) return texture;
+        texture?.Dispose();
+        return new Texture(device, w, h, targetFormat, TextureUsageFlags.ColorTarget | TextureUsageFlags.Sampler);
+    }
+
+    private Texture BlurTexture(uint w, uint h, int pass)
+    {
+        var key = (w, h, pass);
+        if (!blurTextures.TryGetValue(key, out var entry))
+            entry.Texture = new Texture(device, w, h, targetFormat, TextureUsageFlags.ColorTarget | TextureUsageFlags.Sampler);
+        blurTextures[key] = (entry.Texture, effectFrame);
+        return entry.Texture;
+    }
+
+    /// <summary>Drop blur textures of sizes that haven't been used for a while (resizes, animations).</summary>
+    private void PruneBlurTextures()
+    {
+        if (blurTextures.Count <= 8) return;
+        foreach (var (key, entry) in blurTextures)
+        {
+            if (entry.Frame >= effectFrame - 60) continue;
+            entry.Texture.Dispose();
+            blurTextures.Remove(key);
+        }
+    }
+
+    private void ReleaseEffectTextures()
+    {
+        if (scene == null && blurTextures.Count == 0) return;
+        scene?.Dispose();
+        scene = null;
+        foreach (Texture t in groupTargets) t?.Dispose();
+        groupTargets.Clear();
+        foreach (var entry in blurTextures.Values) entry.Texture.Dispose();
+        blurTextures.Clear();
     }
 
     /// <summary>Draw calls [<paramref name="from"/>, <paramref name="to"/>) of the quad buffer; returns how many were issued.</summary>
@@ -1230,6 +1556,8 @@ internal sealed class UIRenderer : IDisposable
     public void Dispose()
     {
         ReleaseLayers();
+        ReleaseEffectTextures();
+        blurPipeline.Dispose();
         compositeBuffer?.Dispose();
         compositeTransfer?.Dispose();
         gpuBuffer?.Dispose();

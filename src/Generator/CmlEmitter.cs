@@ -39,7 +39,7 @@ internal sealed class CmlEmitter
     private static readonly string[] ContextMenuAttributes = { "position", "key" };
     private static readonly string[] TreeAttributes = { "style", "selected", "bind:selected", "key" };
     private static readonly string[] TreeItemAttributes = With("style", "id", "label", "value", "expanded", "bind:expanded", "default", "key");
-    private static readonly string[] EffectAttributes = { "deps", "run", "key" };
+    private static readonly string[] EffectAttributes = { "deps", "run", "cleanup", "key" };
     private static readonly string[] SuspenseAttributes = { "style", "fallback" };
     private static readonly string[] ProgressAttributes = { "style", "id", "value", "min", "max", "orientation" };
     private static readonly string[] ImageAttributes = With("style", "id", "src", "source", "fit", "sampling");
@@ -1447,8 +1447,9 @@ internal sealed class CmlEmitter
     }
 
     /// <summary>
-    /// &lt;Effect deps="LevelIndex" run="LoadLevel"/&gt;: runs the handler after the build where it first
-    /// appears, and whenever deps change (no deps: once). Renders nothing.
+    /// &lt;Effect deps="LevelIndex" run="LoadLevel" cleanup="UnloadLevel"/&gt;: runs the handler after the
+    /// build where it first appears, and whenever deps change (no deps: once). The optional cleanup
+    /// runs before each re-run and when the effect goes away. Renders nothing.
     /// </summary>
     private string EmitEffect(CmlElement e)
     {
@@ -1463,6 +1464,7 @@ internal sealed class CmlEmitter
         Line($"var {v} = ui.EffectAt({SiteOf(e)},");
         if (attrs.TryGetValue("deps", out var deps) && CheckExpression(deps)) EmitMapped(deps.ValueSpan); else Line("0");
         Line(");");
+        if (attrs.TryGetValue("cleanup", out var cleanup)) EmitHandler(v, "Cleanup", cleanup);
         EmitHandler(v, "Run", run);
         return null;
     }
