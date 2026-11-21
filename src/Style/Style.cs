@@ -257,6 +257,10 @@ public struct Style
 
     // ---- Grid container: N equal (1fr) tracks, or explicit Tracks when set.
     public int GridColumnCount, GridRowCount;
+    /// <summary>Auto-fill: as many 1fr columns as fit at this minimum width (0 = off).</summary>
+    public float GridColumnMin;
+    /// <summary>With <see cref="GridColumnMin"/>: auto-fit, empty columns collapse so the items stretch to the full width.</summary>
+    public bool GridColumnFit;
     public GridTrack[] GridColumnTracks, GridRowTracks;
     // ---- Grid item: 1-based start line (0 = auto-placed) and span (0 = 1).
     public short ColStart, ColSpan, RowStart, RowSpan;
@@ -335,7 +339,7 @@ public struct Style
             if ((o.ShadowMask & 2) != 0) ShadowColor = o.ShadowColor;
             ShadowMask |= o.ShadowMask;
         }
-        if ((s & StyleFlags.GridColumns) != 0) { GridColumnCount = o.GridColumnCount; GridColumnTracks = o.GridColumnTracks; }
+        if ((s & StyleFlags.GridColumns) != 0) { GridColumnCount = o.GridColumnCount; GridColumnTracks = o.GridColumnTracks; GridColumnMin = o.GridColumnMin; GridColumnFit = o.GridColumnFit; }
         if ((s & StyleFlags.GridRows) != 0) { GridRowCount = o.GridRowCount; GridRowTracks = o.GridRowTracks; }
         if ((s & StyleFlags.GridPlacement) != 0)
         {
@@ -441,9 +445,20 @@ public struct Style
     /// <summary>CSS grid: children fill the cells row by row; see <see cref="GridCols(int)"/> and <see cref="ColSpanOf"/>.</summary>
     public readonly Style Grid() { With(StyleFlags.Display, out var s); s.Display = Display.Grid; return s; }
     /// <summary><paramref name="count"/> equal columns (Tailwind's grid-cols-N: each minmax(0, 1fr)).</summary>
-    public readonly Style GridCols(int count) { With(StyleFlags.GridColumns | StyleFlags.Display, out var s); s.Display = Display.Grid; s.GridColumnCount = Math.Max(1, count); s.GridColumnTracks = null; return s; }
+    public readonly Style GridCols(int count) { With(StyleFlags.GridColumns | StyleFlags.Display, out var s); s.Display = Display.Grid; s.GridColumnCount = Math.Max(1, count); s.GridColumnTracks = null; s.GridColumnMin = 0; s.GridColumnFit = false; return s; }
     /// <summary>Columns of the given sizes. Keep the array (e.g. static readonly): it isn't copied.</summary>
-    public readonly Style GridCols(params GridTrack[] tracks) { With(StyleFlags.GridColumns | StyleFlags.Display, out var s); s.Display = Display.Grid; s.GridColumnCount = tracks.Length; s.GridColumnTracks = tracks; return s; }
+    public readonly Style GridCols(params GridTrack[] tracks) { With(StyleFlags.GridColumns | StyleFlags.Display, out var s); s.Display = Display.Grid; s.GridColumnCount = tracks.Length; s.GridColumnTracks = tracks; s.GridColumnMin = 0; s.GridColumnFit = false; return s; }
+    /// <summary>
+    /// As many equal columns as fit, each at least <paramref name="minWidth"/> wide, stretched to fill
+    /// the row (CSS <c>repeat(auto-fill, minmax(minWidth, 1fr))</c>). Without a known width: one column.
+    /// </summary>
+    public readonly Style GridColsFill(float minWidth) { With(StyleFlags.GridColumns | StyleFlags.Display, out var s); s.Display = Display.Grid; s.GridColumnCount = 0; s.GridColumnTracks = null; s.GridColumnMin = MathF.Max(1, minWidth); s.GridColumnFit = false; return s; }
+
+    /// <summary>
+    /// Like <see cref="GridColsFill"/>, but columns left empty collapse, so fewer items than fit
+    /// stretch across the whole row (CSS <c>repeat(auto-fit, minmax(minWidth, 1fr))</c>).
+    /// </summary>
+    public readonly Style GridColsFit(float minWidth) { Style s = GridColsFill(minWidth); s.GridColumnFit = true; return s; }
     /// <summary>At least <paramref name="count"/> equal rows; more are added (sized to content) as needed.</summary>
     public readonly Style GridRows(int count) { With(StyleFlags.GridRows, out var s); s.GridRowCount = Math.Max(0, count); s.GridRowTracks = null; return s; }
     /// <inheritdoc cref="GridCols(GridTrack[])"/>

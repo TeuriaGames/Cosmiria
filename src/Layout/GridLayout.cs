@@ -32,8 +32,9 @@ internal sealed partial class FlexLayout
     private void MeasureGrid(ref NodeData n, ref Style s, float inner,
         out float cw, out float ch, out float minContent, out bool dependent, out float minH)
     {
-        GridFrame g = BeginGrid(ref n, ref s);
-        SizeColumns(ref g, ref s, float.IsFinite(inner) ? inner : float.NaN, out minContent);
+        float width = float.IsFinite(inner) ? inner : float.NaN;
+        GridFrame g = BeginGrid(ref n, ref s, width);
+        SizeColumns(ref g, ref s, width, out minContent);
         SizeRows(ref g, ref s, float.NaN);
         cw = Sum(g.ColSizes, g.Columns, s.ColumnGap);
         ch = Sum(g.RowSizes, g.Rows, s.RowGap);
@@ -44,7 +45,7 @@ internal sealed partial class FlexLayout
 
     private void ArrangeGrid(ref NodeData n, ref Style s, float contentX, float contentY, float contentW, float contentH)
     {
-        GridFrame g = BeginGrid(ref n, ref s);
+        GridFrame g = BeginGrid(ref n, ref s, contentW);
         SizeColumns(ref g, ref s, contentW, out _);
         SizeRows(ref g, ref s, contentH);
 
@@ -82,10 +83,12 @@ internal sealed partial class FlexLayout
     }
 
     /// <summary>Place the in-flow children into cells (row-major, sparse like CSS's default).</summary>
-    private GridFrame BeginGrid(ref NodeData n, ref Style s)
+    private GridFrame BeginGrid(ref NodeData n, ref Style s, float width)
     {
         var g = new GridFrame { ItemTop = gridItemTop, SizeTop = gridSizeTop };
-        g.Columns = Math.Max(1, s.GridColumnTracks?.Length ?? s.GridColumnCount);
+        g.Columns = s.GridColumnMin > 0
+            ? float.IsNaN(width) ? 1 : Math.Max(1, (int)((width + s.ColumnGap) / (s.GridColumnMin + s.ColumnGap) + Epsilon))
+            : Math.Max(1, s.GridColumnTracks?.Length ?? s.GridColumnCount);
         int count = 0;
         for (int c = n.FirstChild; c >= 0; c = ui.Nodes[c].NextSibling)
         {
@@ -95,7 +98,7 @@ internal sealed partial class FlexLayout
         g.Items = Reserve(ref gridItems, ref gridItemTop, count * 5);
         g.Count = count;
 
-        int columns = g.Columns, rows = 0, cursorRow = 0, cursorCol = 0, i = 0;
+        int columns = g.Columns, rows = 0, cursorRow = 0, cursorCol = 0, i = 0, usedColumns = 0;
         Array.Clear(gridCells);
         int capacityRows = gridCells.Length / columns;
         for (int c = n.FirstChild; c >= 0; c = ui.Nodes[c].NextSibling)
@@ -136,10 +139,13 @@ internal sealed partial class FlexLayout
 
             capacityRows = Occupy(row, col, cspan, rspan, columns, capacityRows);
             rows = Math.Max(rows, row + rspan);
+            usedColumns = Math.Max(usedColumns, col + cspan);
             int at = g.Items + i++ * 5;
             gridItems[at] = c; gridItems[at + 1] = col; gridItems[at + 2] = row; gridItems[at + 3] = cspan; gridItems[at + 4] = rspan;
         }
 
+        // Auto-fit: the trailing columns nothing was placed in collapse.
+        if (s.GridColumnFit && s.GridColumnMin > 0) g.Columns = Math.Max(1, usedColumns);
         g.Rows = Math.Max(rows, s.GridRowTracks?.Length ?? s.GridRowCount);
         g.ColSizes = Reserve(ref gridSizes, ref gridSizeTop, g.Columns);
         g.RowSizes = Reserve(ref gridSizes, ref gridSizeTop, g.Rows);
@@ -222,6 +228,14 @@ internal sealed partial class FlexLayout
                 GridTrack t = Track(tracks, k);
                 if (t.Kind == GridTrackKind.Fr) gridSizes[g.ColSizes + k] = frUnit * t.Value;
             }
+        }
+
+        // Auto-fill columns never go below their minimum, so neither does a single one.
+        if (s.GridColumnMin > 0)
+        {
+            minContent = MathF.Max(minContent, s.GridColumnMin);
+            for (int k = 0; k < g.Columns; k++)
+                gridSizes[g.ColSizes + k] = MathF.Max(gridSizes[g.ColSizes + k], s.GridColumnMin);
         }
 
         // Min-content: auto columns can't go below their items' minimum; fr columns can (to 0).

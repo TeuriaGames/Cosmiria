@@ -584,6 +584,8 @@ public struct App : IComponent
                 Cell("auto", tagColors[0]),
                 Cell("1fr wraps its text when the column is narrow", tagColors[2]),
             ]),
+            ui.GridFill(60, 6).Child([Cell("fill", tagColors[1]), Cell("fill", tagColors[1]), Cell("fill", tagColors[1])]),
+            ui.GridFit(60, 6).Child([Cell("fit", tagColors[3]), Cell("fit", tagColors[3]), Cell("fit", tagColors[3])]),
         ]);
     }
 

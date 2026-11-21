@@ -51,7 +51,7 @@ internal static class StyleCompiler
         "transition[-all|-colors|-opacity|-transform|-none]", "duration-N", "delay-N", "ease-{linear|in|out|in-out}", "opacity-N",
         "[-]translate-{x|y}-{N|N%|full}", "[-]scale[-x|-y]-N", "[-]rotate-N", "origin-{center|top|top-right|right|bottom-right|bottom|bottom-left|left|top-left}",
         "blur[-none|-sm|-md|-lg|-xl|-2xl|-3xl|-N]", "backdrop-blur[-none|-sm|-md|-lg|-xl|-2xl|-3xl|-N]",
-        "grid", "grid-cols-N", "grid-rows-N", "col-span-{N|full}", "row-span-{N|full}", "col-start-N", "row-start-N",
+        "grid", "grid-cols-N", "grid-cols-fill-N", "grid-cols-fit-N", "grid-rows-N", "col-span-{N|full}", "row-span-{N|full}", "col-start-N", "row-start-N",
     };
 
     // Tailwind's font-size scale, in pixels.
@@ -462,6 +462,8 @@ internal static class StyleCompiler
             return null;
         }
 
+        if (TryPrefix(u, "grid-cols-fill-", out rest)) return NumberArg(rest, ".GridColsFill", out code);
+        if (TryPrefix(u, "grid-cols-fit-", out rest)) return NumberArg(rest, ".GridColsFit", out code);
         foreach (var (prefix, method) in GridUtilities)
         {
             if (!TryPrefix(u, prefix, out rest)) continue;

@@ -307,6 +307,14 @@ public sealed partial class UIStack
     public Node Grid(int columns, float gap = 0, in Style style = default) =>
         View(default(Style).GridCols(columns).Gap(gap).MergedWith(style));
 
+    /// <summary>A grid with as many columns as fit, each at least <paramref name="minColumnWidth"/> wide and stretched to fill the row.</summary>
+    public Node GridFill(float minColumnWidth, float gap = 0, in Style style = default) =>
+        View(default(Style).GridColsFill(minColumnWidth).Gap(gap).MergedWith(style));
+
+    /// <summary>Like <see cref="GridFill"/>, but when fewer items than columns fit, they stretch across the whole row.</summary>
+    public Node GridFit(float minColumnWidth, float gap = 0, in Style style = default) =>
+        View(default(Style).GridColsFit(minColumnWidth).Gap(gap).MergedWith(style));
+
     /// <summary>
     /// Two panes with a draggable divider: <see cref="Cosmiria.Split.First"/> is <paramref name="size"/>
     /// wide (or tall when <paramref name="vertical"/>), <see cref="Cosmiria.Split.Second"/> takes the rest.
