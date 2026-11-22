@@ -401,7 +401,7 @@ ui.Image(gameScreen, ImageFit.Contain).Sampling(ImageSampling.Nearest);       //
 A docking workspace: panels live in tab groups arranged by resizable splits. Users can:
 - click tabs to switch between them;
 - drag a tab out onto another group's left, right, top or bottom edge (splits that group in half) or its center (joins it as a tab);
-- drag dividers to resize.
+- drag dividers to resize. `layout.SetMinSize("viewport", 560, 0)` keeps a panel at least that size: a divider stops where a panel on either side, however deeply nested, would get smaller. It also holds when the window shrinks: that panel stops there and its neighbours give way. It isn't saved by `Serialize`.
 
 An emptied group disappears and its neighbor takes the space.
 ```csharp
