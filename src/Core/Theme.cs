@@ -25,6 +25,9 @@ public sealed class Theme
     public Style ButtonHover = S.Bg(0x4C566AFF);
     public Style ButtonActive = S.Bg(0x2E3440FF);
     public Style TogglePressed = S.Bg(Tailwind.Blue600).BorderColorOf(Tailwind.Blue400).TextColorOf(Tailwind.White);
+    /// <summary>Hover and press of a pressed toggle (instead of <see cref="ButtonHover"/>/<see cref="ButtonActive"/>, which would hide that it's on).</summary>
+    public Style TogglePressedHover = S.Bg(Tailwind.Blue500);
+    public Style TogglePressedActive = S.Bg(Tailwind.Blue700);
 
     // ---- Checkbox / RadioButton / Switch (a row: control + optional label)
     public Style ControlRow = S.FlexRow().ItemsCenter().Gap(8).NoWrap();

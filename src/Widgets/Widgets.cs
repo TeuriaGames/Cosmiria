@@ -86,7 +86,8 @@ public sealed partial class UIStack
     public Node ToggleButton(bool pressed, string label = null, in Style style = default)
     {
         Node button = Button(label, style);
-        if (pressed) button.Styled(context.Theme.TogglePressed);
+        if (pressed)
+            button.Styled(context.Theme.TogglePressed).Hover(context.Theme.TogglePressedHover).Active(context.Theme.TogglePressedActive);
         return button;
     }
 
