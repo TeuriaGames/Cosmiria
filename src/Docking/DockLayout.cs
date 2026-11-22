@@ -130,6 +130,50 @@ public sealed class DockLayout
     /// Close <paramref name="panel"/>: it leaves the layout, and <see cref="DockSpace.Panel"/>
     /// doesn't add it back (as it would for a new panel) until it's opened again.
     /// </summary>
+    private readonly Dictionary<string, System.Numerics.Vector2> minSizes = new();
+
+    /// <summary>
+    /// Keep <paramref name="panel"/> at least this big when dividers are dragged: a divider stops
+    /// where a panel on either side, however deeply nested, would get smaller.
+    /// </summary>
+    public void SetMinSize(string panel, float width, float height) => minSizes[panel] = new(width, height);
+
+    /// <summary>The smallest size <paramref name="node"/> can take with its panels' minimums.</summary>
+    internal System.Numerics.Vector2 MinSize(DockNode node, float handle)
+    {
+        switch (node)
+        {
+            case DockGroup g:
+                var size = System.Numerics.Vector2.Zero;
+                foreach (string panel in g.Panels)
+                    if (minSizes.TryGetValue(panel, out var m)) size = System.Numerics.Vector2.Max(size, m);
+                return size;
+            case DockSplit s:
+                var a = MinSize(s.First, handle);
+                var b = MinSize(s.Second, handle);
+                return s.Vertical
+                    ? new(MathF.Max(a.X, b.X), a.Y + b.Y + handle)
+                    : new(a.X + b.X + handle, MathF.Max(a.Y, b.Y));
+            default:
+                return System.Numerics.Vector2.Zero;
+        }
+    }
+
+    /// <summary>The fraction for a drag of <paramref name="split"/>'s divider, kept within its panels' minimums.</summary>
+    internal float DragFraction(DockSplit split, in PointerEvent e)
+    {
+        bool vertical = split.Vertical;
+        float handle = vertical ? e.Size.Y : e.Size.X;
+        float shared = (vertical ? e.ParentSize.Y : e.ParentSize.X) - handle;
+        if (shared <= 0) return split.Fraction;
+        var first = MinSize(split.First, handle);
+        var second = MinSize(split.Second, handle);
+        float lo = MathF.Max(0.05f, (vertical ? first.Y : first.X) / shared);
+        float hi = MathF.Min(0.95f, 1 - (vertical ? second.Y : second.X) / shared);
+        if (lo > hi) return split.Fraction; // both sides can't fit: leave it where it is
+        return Math.Clamp(Split.FractionAt(e, vertical), lo, hi);
+    }
+
     public void Close(string panel)
     {
         if (!Contains(panel)) return;

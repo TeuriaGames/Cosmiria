@@ -61,7 +61,21 @@ internal struct DockHost : IComponent
     {
         var split = ui.Split(Length.Percent(s.Fraction * 100), s.Vertical, ui.Style().Grow());
         split.Handle.OnDrag(ev.Listener(static (ref DockHost h, in PointerEvent e, DockSplit sp) =>
-            sp.Fraction = Split.FractionAt(e, sp.Vertical, 0.05f, 0.95f), s));
+            sp.Fraction = h.Layout.DragFraction(sp, e), s));
+        // The panels' minimums hold as the window shrinks too: a pane stops there, its sibling gives way.
+        float handle = ui.Theme.SplitHandleSize;
+        var first = Layout.MinSize(s.First, handle);
+        var second = Layout.MinSize(s.Second, handle);
+        if (s.Vertical)
+        {
+            if (first.Y > 0) split.First.Styled(ui.Style().MinH(first.Y));
+            if (second.Y > 0) split.Second.Styled(ui.Style().MinH(second.Y));
+        }
+        else
+        {
+            if (first.X > 0) split.First.Styled(ui.Style().MinW(first.X));
+            if (second.X > 0) split.Second.Styled(ui.Style().MinW(second.X));
+        }
         split.First.Child(RenderNode(ui, ev, s.First));
         split.Second.Child(RenderNode(ui, ev, s.Second));
         return split;

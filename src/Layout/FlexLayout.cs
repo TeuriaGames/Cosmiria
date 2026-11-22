@@ -519,25 +519,28 @@ internal sealed partial class FlexLayout
         bool growing = free > 0;
         EnsureFlexScratch(end);
 
+        // As in CSS: space is shared from each item's flex base size (its size before min/max), and
+        // min/max only apply afterwards, so a min-width doesn't take its share before the others.
         int unfrozen = 0;
+        float lineSpace = free;
         for (int k = start; k < end; k++)
         {
             int c = flow[k];
             ref NodeData cn = ref ui.Nodes[c];
             ref Style cs = ref ui.Styles[c];
-            float size = row ? cn.W : cn.H;
-            baseSize[k] = size;
-            target[k] = size;
-            float factor = growing ? cs.GrowFactor : ShrinkOf(cs) * size;
-            // Items that can't flex in this direction are frozen at their base size.
-            bool frozenNow = factor <= 0 || (!growing && size <= MinMain(c, row, contentW, contentH) + Epsilon);
+            float hypothetical = row ? cn.W : cn.H;
+            float flexBase = row ? cs.Width.Resolve(contentW, cn.MeasuredW) : cs.Height.Resolve(contentH, cn.MeasuredH);
+            lineSpace += hypothetical;
+            float factor = growing ? cs.GrowFactor : ShrinkOf(cs) * flexBase;
+            // Items that can't flex in this direction are frozen at their clamped size.
+            bool frozenNow = factor <= 0
+                || (growing ? flexBase > hypothetical + Epsilon : flexBase < hypothetical - Epsilon)
+                || (!growing && hypothetical <= MinMain(c, row, contentW, contentH) + Epsilon);
             frozen[k] = frozenNow;
+            baseSize[k] = frozenNow ? hypothetical : flexBase;
+            target[k] = baseSize[k];
             if (!frozenNow) unfrozen++;
         }
-
-        // Total space taken by everything except the flexible part of unfrozen items.
-        float lineSpace = free;
-        for (int k = start; k < end; k++) lineSpace += baseSize[k];
 
         for (int iteration = 0; unfrozen > 0 && iteration <= end - start; iteration++)
         {
